@@ -24,7 +24,7 @@ func main() {
 		os.Chdir(d)
 	}
 
-	link := panel.New(".uploads") // our own uploads: previews + slot keys
+	link := panel.New(".uploads")
 	app := server.New(link, server.Config{
 		CacheDir: ".cache",
 		AppDoc:   expandHome(getenv("LOY_DOC", "~/Library/Containers/com.yskd.loywf/Data/Library/Pandora/apps/__UNI__F2139F6/doc")),

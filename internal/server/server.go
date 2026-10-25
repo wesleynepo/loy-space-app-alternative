@@ -18,14 +18,12 @@ import (
 	"github.com/wesleynepo/led-panel/web"
 )
 
-// Config locates the files the UI shows next to the panel's own state.
 type Config struct {
-	CacheDir string // downloaded program pictures
+	CacheDir string
 	// AppDoc is the LOY SPACE app's folder (iOS app on Apple silicon) with its per-panel slot list and local images.
 	AppDoc string
 }
 
-// Server is the local web UI and JSON API over one panel link.
 type Server struct {
 	link *panel.Link
 	cfg  Config
@@ -60,7 +58,6 @@ func fail(w http.ResponseWriter, code int, err error) {
 
 func isLocal(host string) bool { return host == "127.0.0.1" || host == "localhost" }
 
-// localOnly blocks DNS-rebinding and cross-site requests from other web pages.
 func localOnly(r *http.Request) bool {
 	host := r.Host
 	if i := strings.LastIndex(host, ":"); i >= 0 {

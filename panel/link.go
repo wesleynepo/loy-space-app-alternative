@@ -16,24 +16,21 @@ const (
 	panelName  = "YS524A250818"
 	writeMax   = 180 // largest BLE write the app uses (MTU 185 minus overhead)
 	TotalSlots = 60  // size of the panel's key table; the app refuses to send more programs than this
-	// Slots 0-5 hold the app's content and are never overwritten.
 	FirstFreeSlot, LastSlot = 6, 9
 )
 
-// firstSeq is the first sequence number the link uses; the app's own frames sit below it (device info 41, show image 11).
 const firstSeq = 50
 
 var errNotConnected = errors.New("not connected")
 
-// Link is one persistent BLE connection. Every panel exchange holds mu, so frames never interleave.
 type Link struct {
-	mu      sync.Mutex // serializes panel traffic
+	mu      sync.Mutex
 	adapter *bluetooth.Adapter
 	device  bluetooth.Device
 	write   bluetooth.DeviceCharacteristic
-	up      atomic.Bool  // written under mu; readable without it so status polling never waits on an upload
-	trying  atomic.Int32 // Connect calls in flight, including ones waiting on mu
-	connErr atomic.Value // string: why the last Connect failed, empty after a success
+	up      atomic.Bool
+	trying  atomic.Int32
+	connErr atomic.Value
 	infoVal atomic.Value
 	asm     Reassembler
 	replies chan Frame
@@ -95,7 +92,6 @@ func (l *Link) Status() map[string]any {
 	}
 }
 
-// Connect scans for the panel and opens the link, recording the outcome for Status.
 func (l *Link) Connect() error {
 	l.trying.Add(1)
 	defer l.trying.Add(-1)
@@ -211,7 +207,6 @@ func (l *Link) Disconnect() error {
 	return nil
 }
 
-// send writes one frame and waits for the reply with the same sequence number. Caller holds mu.
 func (l *Link) send(frame []byte, seq uint16) (Frame, error) {
 	for len(l.replies) > 0 {
 		<-l.replies
@@ -238,7 +233,6 @@ func (l *Link) send(frame []byte, seq uint16) (Frame, error) {
 	}
 }
 
-// exchange runs fn with the link locked and connected.
 func (l *Link) exchange(fn func() error) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -254,12 +248,11 @@ func (l *Link) command(build func(seq uint16) []byte, seq uint16) error {
 	return l.exchange(func() error { _, err := l.send(build(seq), seq); return err })
 }
 
-// ShowImage switches the panel to a stored picture.
 func (l *Link) ShowImage(index int) error {
 	if index < 0 || index >= TotalSlots {
 		return errors.New("index out of range")
 	}
-	return l.command(func(uint16) []byte { return showImage(11, index) }, 11) // the app always used seq 11
+	return l.command(func(uint16) []byte { return showImage(11, index) }, 11)
 }
 
 func (l *Link) SetPower(on bool) error {
@@ -280,7 +273,6 @@ func (l *Link) SetBrightness(level int) error {
 	return l.command(func(s uint16) []byte { return setBrightness(s, level) }, l.nextSeq())
 }
 
-// ReadState reads power, brightness and rotation via read-only queries.
 func (l *Link) ReadState() (map[string]any, error) {
 	var out [3]byte
 	err := l.exchange(func() error {
@@ -302,8 +294,6 @@ func (l *Link) ReadState() (map[string]any, error) {
 
 var ack = []byte{0x82, 0x00}
 
-// Upload sends a 64x64 RGB picture to the requested slot, or to the first slot the panel reports empty,
-// and returns the slot used. It sends start, item info, chunks and finish, one acked frame at a time.
 func (l *Link) Upload(requested *int, rgb []byte) (int, error) {
 	if len(rgb) != 64*64*3 {
 		return 0, errors.New("expected 64x64 RGB (12288 bytes)")
@@ -395,7 +385,6 @@ func (l *Link) pickSlot(requested *int) (int, error) {
 	return 0, fmt.Errorf("slots %d-%d are all in use - delete one first", FirstFreeSlot, LastSlot)
 }
 
-// Delete removes one of our uploads from the panel and forgets its preview.
 func (l *Link) Delete(slot int) error {
 	if !inSlotRange(slot) {
 		return fmt.Errorf("deletes are limited to slots %d-%d", FirstFreeSlot, LastSlot)
