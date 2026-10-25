@@ -1,7 +1,44 @@
 // BLE effects: thin wrappers over libloyble (bend/ble/loyble.m), which owns all CoreBluetooth state.
-// The library is loaded at run time from $BEND_LIBLOYBLE or ./libloyble.dylib, like bend-kit's libcrypto.
-// Blocking calls run on an IO helper thread via io_work, so the event loop and other computations keep going.
+// The library is loaded at run time from $BEND_LIBLOYBLE, like bend-kit's libcrypto. Blocking calls run on an IO
+// helper thread via io_work, so the event loop and other computations keep going.
 #include <dlfcn.h>
+#include <string.h>
+
+// Copies of crypto_words and crypto_words_octets in bend-kit's crypto/effs/crypto.c (and wire_words in wire.c):
+// bytes cross the boundary as (len, words), four octets to a U32 word, low byte first. Keep them in step.
+static Term ble_words(Env e, const unsigned char* p, u64 n) {
+  u64  w    = (n + 3) / 4;
+  u64  d    = 0;
+  Term zero = 0;
+  while ((1ull << d) < w) {
+    d += 1;
+  }
+  Term a = blk_new(e, false, d, 0, 1, &zero);
+  u64  l = blk_loc(e.mem, a);
+  for (u64 k = 0; k < w; k += 1) {
+    u32 x = 0;
+    for (u64 j = 0; j < 4 && 4 * k + j < n; j += 1) {
+      x |= (u32)p[4 * k + j] << (8 * j);
+    }
+    blk_write(e.mem, false, l, (u32)k, x);
+  }
+  return io_tup(e, (Term)n, a);
+}
+
+// Consumes the array term a; bad is set when a is not an array that holds n octets.
+static unsigned char* ble_words_octets(Env e, Term a, u64 n, u64* len, bool* bad) {
+  u64* H = e.mem;
+  bool b = term_tag(a) != TAG_BUF || n > (4ull << blk_cls(a));
+  *bad   = *bad || b;
+  *len   = b ? 0 : n;
+  unsigned char* buf = io_mem(malloc(*len + 1));
+  u64            l   = b ? 0 : blk_loc(H, a);
+  for (u64 i = 0; i < *len; i += 1) {
+    buf[i] = (unsigned char)(blk_read(H, false, l, (u32)(i / 4)) >> (8 * (i % 4)));
+  }
+  term_drop(e, a);
+  return buf;
+}
 
 static struct {
   int (*open)(const char*, int, int);
@@ -16,7 +53,8 @@ static int ble_loaded;
 static const char* ble_load(void) {
   if (ble_loaded) return NULL;
   const char* path = getenv("BEND_LIBLOYBLE");
-  void* h = dlopen(path ? path : "./libloyble.dylib", RTLD_NOW);
+  void* h = path ? dlopen(path, RTLD_NOW) : dlopen("./libloyble.dylib", RTLD_NOW);
+  if (!h && !path) h = dlopen("./ble/libloyble.dylib", RTLD_NOW);
   if (!h) return dlerror();
   ble_lib.open = (int (*)(const char*, int, int))dlsym(h, "ble_open");
   ble_lib.write = (int (*)(const unsigned char*, int))dlsym(h, "ble_write");
@@ -67,7 +105,7 @@ static void __attribute__((constructor)) ble_open_use(void) {
 
 #endif
 
-#ifdef CID(BLE.write)
+#ifdef CID(BLE.write.words)
 
 static void ble_write_call(IoWork* w) {
   w->hand = ble_lib.write((const unsigned char*)w->data, (int)w->size);
@@ -78,43 +116,32 @@ static Term ble_write_pack(Env e, IoWork* w) {
   return ble_status(e, w);
 }
 
-static int ble_hexval(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  return -1;
-}
-
-// BLE.write(hex): one frame, as hex text; the library splits it into <=180-byte writes.
-Term ble_write_run(Env e, Term* f, IoWork* w) {
+// BLE.write.words(len, words): one frame; the library splits it into <=180-byte writes.
+Term ble_write_words_run(Env e, Term* f, IoWork* w) {
+  u64            n   = 0;
+  bool           bad = false;
+  unsigned char* in  = ble_words_octets(e, f[1], (u64)(u32)f[0], &n, &bad);
+  if (bad || n == 0) {
+    free(in);
+    return io_fail(e, EINVAL, "BLE.write.words needs len > 0 and an array that holds len octets");
+  }
   const char* err = ble_load();
-  if (err) return io_fail(e, ENOENT, err);
-  uint64_t n = 0;
-  char* hex = io_cstr(e, f[0], &n);
-  unsigned char* bytes = (unsigned char*)malloc(n / 2 + 1);
-  int ok = n % 2 == 0 && n > 0;
-  for (uint64_t i = 0; ok && i < n; i += 2) {
-    int hi = ble_hexval(hex[i]), lo = ble_hexval(hex[i + 1]);
-    ok = hi >= 0 && lo >= 0;
-    if (ok) bytes[i / 2] = (unsigned char)(hi * 16 + lo);
+  if (err) {
+    free(in);
+    return io_fail(e, ENOENT, err);
   }
-  free(hex);
-  if (!ok) {
-    free(bytes);
-    return io_fail(e, EINVAL, "BLE.write expects non-empty hex text");
-  }
-  w->data = (char*)bytes;
-  w->size = n / 2;
+  w->data = (char*)in;
+  w->size = n;
   return io_work(w, ble_write_call, ble_write_pack);
 }
 
-static void __attribute__((constructor)) ble_write_use(void) {
-  io_eff(CID(BLE.write), ble_write_run);
+static void __attribute__((constructor)) ble_write_words_use(void) {
+  io_eff(CID(BLE.write.words), ble_write_words_run);
 }
 
 #endif
 
-#ifdef CID(BLE.recv)
+#ifdef CID(BLE.recv.words)
 
 static void ble_recv_call(IoWork* w) {
   w->hand = ble_lib.recv((unsigned char*)w->data, 512, (int)w->word);
@@ -126,20 +153,13 @@ static Term ble_recv_pack(Env e, IoWork* w) {
     free(w->data);
     return io_fail(e, (uint32_t)(-n), ble_lib.error(n));
   }
-  static const char digits[] = "0123456789abcdef";
-  char* hex = (char*)malloc((size_t)n * 2 + 1);
-  for (int i = 0; i < n; i++) {
-    hex[2 * i] = digits[((unsigned char*)w->data)[i] >> 4];
-    hex[2 * i + 1] = digits[((unsigned char*)w->data)[i] & 15];
-  }
-  Term out = io_done(e, io_str(e, hex, (uint64_t)n * 2));
-  free(hex);
+  Term out = io_done(e, ble_words(e, (const unsigned char*)w->data, (u64)n));
   free(w->data);
   return out;
 }
 
-// BLE.recv(timeout_ms): the next notification chunk, as hex text.
-Term ble_recv_run(Env e, Term* f, IoWork* w) {
+// BLE.recv.words(timeout_ms): the next notification chunk.
+Term ble_recv_words_run(Env e, Term* f, IoWork* w) {
   const char* err = ble_load();
   if (err) return io_fail(e, ENOENT, err);
   w->data = malloc(512);
@@ -147,8 +167,8 @@ Term ble_recv_run(Env e, Term* f, IoWork* w) {
   return io_work(w, ble_recv_call, ble_recv_pack);
 }
 
-static void __attribute__((constructor)) ble_recv_use(void) {
-  io_eff(CID(BLE.recv), ble_recv_run);
+static void __attribute__((constructor)) ble_recv_words_use(void) {
+  io_eff(CID(BLE.recv.words), ble_recv_words_run);
 }
 
 #endif

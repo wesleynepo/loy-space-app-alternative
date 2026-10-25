@@ -4,7 +4,7 @@ Everything in `protocol.py` and `server.py` is pure bytes / HTTP / files except 
 
 ## Status
 
-Spike done in `bend/ble/`: `loyble.m` implements open / write / recv / drain / close, `ble.c` exposes them to Bend as effects, and `bend/ble_hello.bend` completes the device-info exchange with the real panel. Not yet done: a generic (non-LOY) API, a replay/fake transport, and the upload/delete flows.
+Spike done in `bend/ble/`: `loyble.m` implements open / write / recv / drain / close, `ble.c` and `ble.js` (`bun:ffi`) expose them to Bend as effects with bytes as packed words, and `bend/ble_hello.bend` completes the device-info exchange with the real panel in both the native and JS lanes. `BLE.open.retry` covers the rescan. Not yet done: a generic (non-LOY) API, a replay/fake transport, and the upload/delete flows.
 
 ## Required for the server (`server.py`, `panel.py`, `probe.py`)
 

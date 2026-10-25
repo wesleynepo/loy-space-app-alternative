@@ -1,75 +1,100 @@
 import Base
-import ./bytes.bend as B
+import bend-kit-bytes@0.3.2.0/bytes.bend as Bytes
 import ./frame.bend as F
+import ./hex.bend as H
 import ./golden.bend as G
 
 # Golden-vector tests: every frame must match the bytes protocol.py produces.
 
-def Test.same.frame(f: F.Frame, seq: U32, dir: U32, body: List<&2, U32>) -> Bool:
-  match f:
-    case F.Frame{s, d, b}:
-      Bool.and(Bool.and(U32.is_eq(s, seq), U32.is_eq(d, dir)), F.Bytes.eq(b, body))
+def Test.from_hex(s: String) -> Bytes.Bytes:
+  H.Hex.bytes(s)
 
-def Test.same.parsed(m: Maybe<&2, F.Frame>, seq: U32, dir: U32, body: List<&2, U32>) -> Bool:
-  match m:
-    case Some{f}:
-      Test.same.frame(f, seq, dir, body)
+# A string with its last hex digit changed, so the frame's checksum no longer matches.
+def Test.flip.last(c: Maybe<&2, Char>) -> String:
+  match c:
+    case Some{ch}:
+      Bool.pick(String, Char.is_eq(ch, '0'), "1", "0")
     case None{}:
-      False{}
+      ""
 
-def Test.is_none(m: Maybe<&2, F.Frame>) -> Bool:
+def Test.flip(+s: String) -> String:
+  String.take(s, Nat.sub(String.length(s), 1n)) ++ Test.flip.last(String.get(s, Nat.sub(String.length(s), 1n)))
+
+def Test.is_none(m: Maybe<&1, F.Frame>) -> Bool:
   match m:
     case Some{_}:
       False{}
     case None{}:
       True{}
 
-# build, parse round trip, and two malformed inputs that must be refused.
-def Test.case(c: G.Case) -> Bool:
-  match c:
-    case G.Case{_, +seq, +dir, +body, +hex}:
-      +frame = F.Frame.build(seq, dir, body)
-      Bool.and(
-        Bool.and(String.eq(B.Bytes.hex(frame), hex), Test.same.parsed(F.Frame.parse(frame), seq, dir, body)),
-        Bool.and(
-          Test.is_none(F.Frame.parse(List.append(&2, U32, frame, {[0] : List<&2, U32>}))),
-          Test.is_none(F.Frame.parse(List.take(&2, U32, frame, Nat.sub(List.length(&2, U32, frame), 1n))))))
+def Test.same.frame(f: F.Frame, seq: U32, dir: U32, body: String) -> Bool:
+  match f:
+    case F.Frame{s, d, b}:
+      Bool.and(Bool.and(U32.is_eq(s, seq), U32.is_eq(d, dir)), String.eq(Bytes.to_hex(b), body))
 
-def Test.eq_frames(xs: List<&2, List<&2, U32>>, ys: List<&2, List<&2, U32>>) -> Bool:
-  match xs ys:
-    case Nil{} Nil{}:
-      True{}
-    case Con{a, as} Con{b, bs}:
-      Bool.and(F.Bytes.eq(a, b), Test.eq_frames(as, bs))
-    case _ _:
+def Test.same.parsed(m: Maybe<&1, F.Frame>, seq: U32, dir: U32, body: String) -> Bool:
+  match m:
+    case Some{f}:
+      Test.same.frame(f, seq, dir, body)
+    case None{}:
       False{}
-
-def Test.feed_all(chunks: List<&2, List<&2, U32>>, st: F.Feed, acc: List<&2, List<&2, U32>>) -> F.Feed:
-  match chunks st:
-    case Nil{} F.Feed{fr, buf}:
-      F.Feed{List.append(&2, List<&2, U32>, acc, fr), buf}
-    case Con{c, rest} F.Feed{fr, buf}:
-      Test.feed_all(rest, F.Frame.feed(buf, c), List.append(&2, List<&2, U32>, acc, fr))
-
-def Test.split.done(r: F.Feed, frames: List<&2, List<&2, U32>>) -> Bool:
-  match r:
-    case F.Feed{got, _}:
-      Test.eq_frames(got, frames)
-
-def Test.split(s: G.Split) -> Bool:
-  match s:
-    case G.Split{_, chunks, frames}:
-      Test.split.done(Test.feed_all(chunks, F.Feed{Nil{}, Nil{}}, Nil{}), frames)
 
 def Test.case.name(c: G.Case) -> String:
   match c:
     case G.Case{n, _, _, _, _}:
       n
 
+# build, parse round trip, and three malformed inputs that must be refused.
+def Test.case(c: G.Case) -> Bool:
+  match c:
+    case G.Case{_, +seq, +dir, +body, +frame}:
+      Bool.and(
+        Bool.and(
+          String.eq(Bytes.to_hex(F.Frame.build(seq, dir, Test.from_hex(body))), frame),
+          Test.same.parsed(F.Frame.parse(Test.from_hex(frame)), seq, dir, body)),
+        Bool.and(
+          Test.is_none(F.Frame.parse(Test.from_hex(frame ++ "00"))),
+          Bool.and(
+            Test.is_none(F.Frame.parse(Test.from_hex(String.take(frame, Nat.sub(String.length(frame), 2n))))),
+            Test.is_none(F.Frame.parse(Test.from_hex(Test.flip(frame)))))))
+
+# --- reassembly ---
+
+def Test.hexes(fs: List<&1, Bytes.Bytes>) -> List<&2, String>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case Con{f, rest}:
+      Bytes.to_hex(f) <> Test.hexes(rest)
+
+def Test.eq_strings(xs: List<&2, String>, ys: List<&2, String>) -> Bool:
+  match xs ys:
+    case Nil{} Nil{}:
+      True{}
+    case Con{a, as} Con{b, bs}:
+      Bool.and(String.eq(a, b), Test.eq_strings(as, bs))
+    case _ _:
+      False{}
+
+# Feed every chunk in turn and collect the frames that came out, as hex.
+def Test.feed_all(chunks: List<&2, String>, st: F.Feed, acc: List<&2, String>) -> List<&2, String>:
+  match chunks st:
+    case Nil{} F.Feed{fr, _}:
+      List.append(&2, String, acc, Test.hexes(fr))
+    case Con{c, rest} F.Feed{fr, buf}:
+      Test.feed_all(rest, F.Frame.feed(buf, Test.from_hex(c)), List.append(&2, String, acc, Test.hexes(fr)))
+
 def Test.split.name(s: G.Split) -> String:
   match s:
     case G.Split{n, _, _}:
       n
+
+def Test.split(s: G.Split) -> Bool:
+  match s:
+    case G.Split{_, chunks, frames}:
+      Test.eq_strings(Test.feed_all(chunks, F.Feed{Nil{}, Bytes.new(0)}, Nil{}), frames)
+
+# --- report ---
 
 def Test.line(ok: Bool, name: String) -> String:
   match ok:
