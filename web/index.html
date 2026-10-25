@@ -77,22 +77,26 @@
   #info { color:var(--on-surface-variant); }
 
   /* slots */
-  .slots { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:12px; }
-  button.slot { height:auto; padding:8px 8px 12px; border-radius:12px; background:var(--surface); color:var(--on-surface);
-    border:1px solid var(--outline-variant); flex-direction:column; align-items:center; text-align:center; gap:4px; }
-  button.slot:hover:not(:disabled) { background:color-mix(in srgb, var(--on-surface) 6%, var(--surface)); box-shadow:var(--shadow1); }
-  button.slot.cur { background:var(--primary-container); color:var(--on-primary-container); border-color:var(--primary); }
-  button.slot:disabled { opacity:.6; color:var(--on-surface); }
-  .slot .noimg { width:100%; max-width:96px; aspect-ratio:1; display:grid; place-items:center; border-radius:8px; background:#000; color:#9aa0a6; font-size:12px; }
-  .slot img { width:100%; max-width:96px; aspect-ratio:1; image-rendering:pixelated; background:#000; border-radius:8px; }
-  .slot span:first-of-type { font-weight:500; }
-  .slot small { font-size:12px; color:var(--on-surface-variant); text-transform:capitalize; }
-  .slot.cur small { color:inherit; opacity:.8; }
-  .chip { display:inline-flex; align-items:center; height:24px; padding:0 8px; border-radius:8px; font-size:12px; font-weight:500; letter-spacing:.5px; }
+  .slots { display:grid; }
+  .slot-row { display:flex; align-items:center; gap:16px; min-height:64px; padding:8px 8px 8px 12px; }
+  .slot-row + .slot-row { border-top:1px solid var(--outline-variant); }
+  .slot-row.cur { border-radius:12px; background:var(--primary-container); color:var(--on-primary-container); border-top-color:transparent; }
+  .slot-row.cur + .slot-row { border-top-color:transparent; }
+  .lead { width:48px; height:48px; flex:none; border-radius:8px; background:#000; color:#fff; display:grid; place-items:center;
+    font-weight:500; font-size:16px; image-rendering:pixelated; }
+  .meta { flex:1; min-width:0; display:grid; gap:2px; }
+  .meta .name { font-weight:500; font-size:16px; line-height:24px; }
+  .meta small { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--on-surface-variant); text-transform:capitalize; }
+  .slot-row.cur .meta small { color:inherit; opacity:.85; }
+  .slot-row .tonal { height:36px; padding:0 16px; }
+  .slot-row.cur .tonal { background:var(--primary); color:var(--on-primary); }
+  .icon-btn { width:40px; height:40px; padding:0; justify-content:center; border-radius:50%; color:var(--error); }
+  .icon-btn svg { margin:0; width:24px; height:24px; }
+  .empty { margin:0; color:var(--on-surface-variant); }
+
+  .chip { text-transform:none; display:inline-flex; align-items:center; height:24px; padding:0 8px; border-radius:8px; font-size:12px; font-weight:500; letter-spacing:.5px; }
   .chip.ok { background:var(--ok-container); color:var(--on-ok-container); }
   .chip.no { background:var(--error-container); color:var(--on-error-container); }
-  .chip.del { border:1px solid var(--outline); color:var(--error); cursor:pointer; }
-  .chip.del:hover { background:var(--error-container); }
 
   .empty { grid-column:1/-1; margin:0; color:var(--on-surface-variant); }
 
@@ -235,6 +239,7 @@
 <script>
 const $ = id => document.getElementById(id);
 const syncFill = () => $('bright').style.setProperty('--fill', (($('bright').value - 1) / 6 * 100) + '%');
+const FIRST_FREE_SLOT = 6, LAST_SLOT = 9;   // the server refuses uploads and deletes outside these
 let wasConnected = null;
 new MutationObserver(() => {   // popover keeps the snackbar above an open modal
   const err = $('err');
@@ -267,35 +272,45 @@ async function loadSlots() {
     return;
   }
   for (const s of data.slots) {
-    const b = document.createElement('button');
-    b.className = 'slot' + (s.slot === data.current ? ' cur' : '');
-    b.dataset.needsConn = '1';
-    b.disabled = !wasConnected;
-    const img = s.type === 'unknown' ? document.createElement('div') : Object.assign(document.createElement('img'), {src: s.src, alt: 'slot ' + s.slot});
-    if (s.type === 'unknown') { img.className = 'noimg'; img.textContent = 'No preview'; }
-    const label = document.createElement('span');
-    label.textContent = 'Slot ' + s.slot;
+    const row = document.createElement('div');
+    row.className = 'slot-row' + (s.slot === data.current ? ' cur' : '');
+    const lead = s.type === 'unknown' ? document.createElement('div') : Object.assign(document.createElement('img'), {src: s.src, alt: 'slot ' + s.slot});
+    lead.className = 'lead';
+    if (s.type === 'unknown') lead.textContent = s.slot;
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = 'Slot ' + s.slot;
     const sub = document.createElement('small');
-    sub.textContent = s.type;
-    b.append(img, label, sub);
+    sub.append(s.type);
     if (s.match !== null) {
       const t = document.createElement('span');
       t.className = 'chip ' + (s.match ? 'ok' : 'no');
       t.textContent = s.match ? 'On panel' : 'Differs';
-      b.append(t);
+      sub.append(t);
     }
-    if (s.type === 'upload') {
-      const del = document.createElement('span');
-      del.className = 'chip del';
-      del.textContent = 'delete';
-      del.onclick = e => {
-        e.stopPropagation();
-        if (wasConnected && confirm('Delete slot ' + s.slot + ' from the panel?')) api('/api/delete', {slot: s.slot});
-      };
-      b.append(del);
+    meta.append(name, sub);
+    const show = document.createElement('button');
+    show.className = 'tonal';
+    show.dataset.needsConn = '1';
+    show.disabled = !wasConnected;
+    show.textContent = s.slot === data.current ? 'Showing' : 'Show';
+    show.setAttribute('aria-label', 'Show slot ' + s.slot);
+    show.onclick = () => api('/api/image', {index: s.slot});
+    row.append(lead, meta, show);
+    if (s.type !== 'app' && s.slot >= FIRST_FREE_SLOT && s.slot <= LAST_SLOT) {
+      const del = document.createElement('button');
+      del.className = 'icon-btn';
+      del.dataset.needsConn = '1';
+      del.disabled = !wasConnected;
+      del.title = 'Delete slot ' + s.slot;
+      del.setAttribute('aria-label', 'Delete slot ' + s.slot);
+      del.innerHTML = '<svg viewBox="0 -960 960 960" aria-hidden="true" fill="currentColor"><path d="M280-120q-33 0-56.500-23.500T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.500 56.500T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg>';
+      del.onclick = () => { if (wasConnected && confirm('Delete slot ' + s.slot + ' from the panel?')) api('/api/delete', {slot: s.slot}); };
+      row.append(del);
     }
-    b.onclick = () => api('/api/image', {index: s.slot});
-    box.append(b);
+    box.append(row);
   }
 }
 
