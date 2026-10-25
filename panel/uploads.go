@@ -11,7 +11,6 @@ import (
 	"sync"
 )
 
-// Uploads is the on-disk record of the pictures we sent: a preview per slot and an index of their keys.
 type Uploads struct {
 	dir string
 	mu  sync.Mutex
@@ -22,7 +21,6 @@ type UploadEntry struct {
 	TS  int64  `json:"ts"`
 }
 
-// Load returns the index keyed by slot number.
 func (u *Uploads) Load() map[string]UploadEntry {
 	ix := map[string]UploadEntry{}
 	if b, err := os.ReadFile(filepath.Join(u.dir, "index.json")); err == nil {
@@ -31,7 +29,6 @@ func (u *Uploads) Load() map[string]UploadEntry {
 	return ix
 }
 
-// PreviewPath is where the picture sent to a slot is kept.
 func (u *Uploads) PreviewPath(slot int) string {
 	return filepath.Join(u.dir, fmt.Sprintf("slot%d.png", slot))
 }

@@ -6,7 +6,6 @@
 <meta name="color-scheme" content="light dark">
 <title>LED Panel</title>
 <style>
-  /* Material 3 tokens, baseline blue scheme */
   :root {
     --primary:#0b57d0; --on-primary:#fff; --primary-container:#d3e3fd; --on-primary-container:#041e49;
     --secondary-container:#dde3ea; --on-secondary-container:#151c22;
@@ -45,7 +44,6 @@
   .row + .row, .slots + .row { margin-top:16px; }
   .grow { flex:1; }
 
-  /* buttons */
   button, .btn { font-weight:500; font-size:14px; line-height:20px; font-family:inherit; letter-spacing:.1px; height:40px; padding:0 24px; border-radius:20px;
     border:0; background:transparent; color:var(--primary); cursor:pointer; display:inline-flex; align-items:center; gap:8px;
     position:relative; overflow:hidden; transition:background-color .15s, box-shadow .15s; }
@@ -64,7 +62,6 @@
   button svg, .btn svg { width:18px; height:18px; fill:currentColor; margin-left:-8px; }
   .btn input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
 
-  /* connection */
   .status { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 12px; border-radius:8px; font-weight:500; font-size:14px; }
   .status::before { content:""; width:8px; height:8px; border-radius:50%; background:currentColor; }
   .status.on { background:var(--ok-container); color:var(--on-ok-container); }
@@ -76,7 +73,6 @@
   #connErr:empty { display:none; }
   #info { color:var(--on-surface-variant); }
 
-  /* slots */
   .slots { display:grid; }
   .slot-row { display:flex; align-items:center; gap:16px; min-height:64px; padding:8px 8px 8px 12px; }
   .slot-row + .slot-row { border-top:1px solid var(--outline-variant); }
@@ -100,10 +96,8 @@
 
   .empty { grid-column:1/-1; margin:0; color:var(--on-surface-variant); }
 
-  /* upload */
   #ustatus { color:var(--on-surface-variant); }
 
-  /* upload dialog */
   dialog { width:calc(100vw - 32px); max-width:520px; max-height:calc(100dvh - 32px); overflow:auto; padding:24px; border:0; border-radius:28px;
     background:var(--surface-container-high); color:var(--on-surface); box-shadow:var(--shadow3); }
   dialog::backdrop { background:rgb(0 0 0/.4); }
@@ -125,7 +119,6 @@
   input[type=color] { width:40px; height:40px; padding:0; border:1px solid var(--outline); border-radius:8px; background:none; cursor:pointer; }
   .actions { display:flex; justify-content:flex-end; gap:8px; }
 
-  /* display controls */
   select { font:inherit; height:40px; padding:0 12px; border-radius:8px; border:1px solid var(--outline); background:var(--surface-container);
     color:var(--on-surface); cursor:pointer; }
   select:focus-visible { outline:2px solid var(--primary); outline-offset:1px; }
@@ -143,7 +136,6 @@
   input[type=range]:disabled { opacity:.38; cursor:default; }
   #brightVal { min-width:1.5em; text-align:right; font-weight:500; color:var(--on-surface); }
 
-  /* traffic */
   details summary { cursor:pointer; font-weight:500; font-size:16px; line-height:24px; font-family:inherit; list-style:none; display:flex; justify-content:space-between; }
   details summary::-webkit-details-marker { display:none; }
   details summary::after { content:"expand_more"; font-size:0; width:24px; height:24px; background:currentColor;
@@ -153,7 +145,6 @@
   pre { margin:16px 0 0; padding:12px; border-radius:8px; background:var(--surface); max-height:220px; overflow:auto;
     font:12px/16px ui-monospace, "Roboto Mono", monospace; white-space:pre-wrap; word-break:break-all; }
 
-  /* snackbar */
   #err { position:fixed; inset:auto; left:50%; bottom:16px; margin:0; border:0; transform:translateX(-50%); z-index:10; width:max-content; max-width:calc(100vw - 32px);
     padding:14px 16px; border-radius:4px; background:var(--inverse-surface); color:var(--inverse-on-surface); box-shadow:var(--shadow3); }
   #err:empty { display:none; }
@@ -262,7 +253,7 @@
 <script>
 const $ = id => document.getElementById(id);
 const syncFill = () => $('bright').style.setProperty('--fill', (($('bright').value - 1) / 6 * 100) + '%');
-const FIRST_FREE_SLOT = 6, LAST_SLOT = 9;   // the server refuses uploads and deletes outside these
+const FIRST_FREE_SLOT = 6, LAST_SLOT = 9;
 let wasConnected = null;
 new MutationObserver(() => {   // popover keeps the snackbar above an open modal
   const err = $('err');
@@ -372,9 +363,9 @@ const rgbOf = canvas => {
 };
 
 const dlg = $('uploadDialog');
-const MIN_SIDE = 16;                       // smallest selectable source square, in image pixels
-let bmp = null, fit = 1;                   // fit: displayed px per image px
-const sel = {x: 0, y: 0, s: 0};            // selection in displayed px
+const MIN_SIDE = 16;
+let bmp = null, fit = 1;
+const sel = {x: 0, y: 0, s: 0};
 
 function drawSelection() {
   const box = $('box').style;
@@ -387,7 +378,7 @@ function drawSelection() {
   $('zoom').value = hi === lo ? 100 : (sel.s - lo) / (hi - lo) * 100;
 }
 
-function setSize(size, cx, cy) {           // resize around (cx, cy), keeping the selection inside the image
+function setSize(size, cx, cy) {
   const lo = Math.min(MIN_SIDE, bmp.width, bmp.height) * fit;
   sel.s = Math.max(lo, Math.min(size, bmp.width * fit, bmp.height * fit));
   sel.x = Math.max(0, Math.min(cx - sel.s / 2, bmp.width * fit - sel.s));
@@ -432,7 +423,7 @@ drag($('box'), (m, o, st) => {
   sel.y = Math.max(0, Math.min(st.y + m.clientY - st.py, bmp.height * fit - sel.s));
   drawSelection();
 });
-drag($('handle'), (m, o, st) => {          // the opposite corner stays put
+drag($('handle'), (m, o, st) => {
   const size = Math.max(m.clientX - o.left - st.x, m.clientY - o.top - st.y);
   const lo = Math.min(MIN_SIDE, bmp.width, bmp.height) * fit;
   sel.s = Math.max(lo, Math.min(size, bmp.width * fit - st.x, bmp.height * fit - st.y));

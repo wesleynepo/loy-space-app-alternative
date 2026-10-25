@@ -40,7 +40,6 @@ type slotInfo struct {
 	Match *bool  `json:"match"`
 }
 
-// allSlots is the app's program list, plus our own uploads in slots the app doesn't know about.
 func (s *Server) allSlots() []slotInfo {
 	var slots []slotInfo
 	for i, e := range s.loadProgram() {
@@ -66,7 +65,6 @@ func (s *Server) allSlots() []slotInfo {
 	return slots
 }
 
-// withPanelKeys marks each slot against the panel's key table and adds the occupied slots we hold no picture for.
 func withPanelKeys(slots []slotInfo, keys map[int]string) []slotInfo {
 	known := map[int]bool{}
 	for i := range slots {
@@ -84,7 +82,6 @@ func withPanelKeys(slots []slotInfo, keys map[int]string) []slotInfo {
 	return slots
 }
 
-// slotImage returns bytes and content type for a slot's picture: CDN download (cached) or a file in the app's folder.
 func (s *Server) slotImage(slot int) ([]byte, string, error) {
 	program := s.loadProgram()
 	if slot >= len(program) {
