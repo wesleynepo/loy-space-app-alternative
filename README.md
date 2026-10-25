@@ -1,5 +1,10 @@
 # LED panel control (YS524A250818, LOY SPACE protocol)
 
+[![CI](https://github.com/wesleynepo/loy-space-app-alternative/actions/workflows/ci.yml/badge.svg)](https://github.com/wesleynepo/loy-space-app-alternative/actions/workflows/ci.yml)
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/wesleynepo/loy-space-app-alternative/badges/coverage.json)](https://github.com/wesleynepo/loy-space-app-alternative/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/wesleynepo/led-panel)](https://goreportcard.com/report/github.com/wesleynepo/led-panel)
+[![Go version](https://img.shields.io/github/go-mod/go-version/wesleynepo/loy-space-app-alternative)](go.mod)
+
 Local web UI + Go BLE server for the 64x64 panel, as an alternative to the LOY SPACE app. Reverse-engineered from a PacketLogger capture and the app's own JS.
 
 ## Run
@@ -13,7 +18,8 @@ BLE goes through tinygo.org/x/bluetooth. `web/index.html` is served from disk (a
 Close LOY SPACE (and disconnect the phone) first: the panel accepts one BLE connection at a time. Click Connect in the page.
 
 ## Files
-- `Makefile`: `run`, `build`, `test`, `vet`, `clean`.
+- `Makefile`: `run`, `build`, `test`, `cover`, `vet`, `lint`, `fmt`, `check`, `clean`.
+- `.golangci.yml`, `.github/`: lint config, CI (lint, test with race detector on Linux and macOS, govulncheck). On `main`, CI also writes the coverage percentage to `coverage.json` on the `badges` branch for the README badge.
 - `cmd/server/main.go`: wiring only (port, folders, graceful shutdown).
 - `internal/server/`: HTTP layer. API handlers, the LOY SPACE slot list and picture cache. Knows nothing about BLE frames.
 - `panel/`: panel control, no HTTP. `link.go` is the BLE link (uploads, deletes, state, validated commands), `uploads.go` the on-disk record of our uploads, `protocol.go` frame build/parse and image packing.

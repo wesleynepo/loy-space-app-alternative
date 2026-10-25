@@ -16,7 +16,9 @@ const (
 	panelName  = "YS524A250818"
 	writeMax   = 180 // largest BLE write the app uses (MTU 185 minus overhead)
 	TotalSlots = 60  // size of the panel's key table; the app refuses to send more programs than this
-	FirstFreeSlot, LastSlot = 6, 9
+
+	FirstFreeSlot = 6
+	LastSlot      = 9
 )
 
 const firstSeq = 50
@@ -120,11 +122,11 @@ func (l *Link) connect() error {
 	var addr bluetooth.Address
 	found := false
 	for attempt := 1; attempt <= 3 && !found; attempt++ {
-		timer := time.AfterFunc(10*time.Second, func() { l.adapter.StopScan() })
-		l.adapter.Scan(func(a *bluetooth.Adapter, r bluetooth.ScanResult) {
+		timer := time.AfterFunc(10*time.Second, func() { _ = l.adapter.StopScan() })
+		_ = l.adapter.Scan(func(a *bluetooth.Adapter, r bluetooth.ScanResult) {
 			if r.LocalName() == panelName {
 				addr, found = r.Address, true
-				a.StopScan()
+				_ = a.StopScan()
 			}
 		})
 		timer.Stop()
@@ -140,7 +142,7 @@ func (l *Link) connect() error {
 		return err
 	}
 	if err := l.attach(dev); err != nil {
-		dev.Disconnect()
+		_ = dev.Disconnect()
 		return err
 	}
 	l.up.Store(true)
@@ -193,7 +195,7 @@ func (l *Link) attach(dev bluetooth.Device) error {
 
 func (l *Link) dropLocked() {
 	l.up.Store(false)
-	l.device.Disconnect()
+	_ = l.device.Disconnect()
 }
 
 func (l *Link) Disconnect() error {

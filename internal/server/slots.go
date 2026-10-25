@@ -27,7 +27,7 @@ type programEntry struct {
 func (s *Server) loadProgram() []programEntry {
 	var p []programEntry
 	if b, err := os.ReadFile(filepath.Join(s.cfg.AppDoc, "524A250818_program_2_64_64.json")); err == nil {
-		json.Unmarshal(b, &p)
+		_ = json.Unmarshal(b, &p)
 	}
 	return p
 }
@@ -98,7 +98,7 @@ func (s *Server) slotImage(slot int) ([]byte, string, error) {
 		sum := sha1.Sum([]byte(path))
 		file = filepath.Join(s.cfg.CacheDir, hex.EncodeToString(sum[:])+filepath.Ext(u.Path))
 		if _, err := os.Stat(file); err != nil {
-			os.MkdirAll(s.cfg.CacheDir, 0o755)
+			_ = os.MkdirAll(s.cfg.CacheDir, 0o755)
 			client := http.Client{Timeout: 10 * time.Second}
 			resp, err := client.Get(path)
 			if err != nil {
@@ -106,10 +106,13 @@ func (s *Server) slotImage(slot int) ([]byte, string, error) {
 			}
 			defer resp.Body.Close()
 			b, err := io.ReadAll(resp.Body)
-			if err != nil || resp.StatusCode != 200 {
-				return nil, "", fmt.Errorf("download failed: %d %v", resp.StatusCode, err)
+			if err != nil {
+				return nil, "", fmt.Errorf("download failed: %w", err)
 			}
-			os.WriteFile(file, b, 0o644)
+			if resp.StatusCode != http.StatusOK {
+				return nil, "", fmt.Errorf("download failed: status %d", resp.StatusCode)
+			}
+			_ = os.WriteFile(file, b, 0o644)
 		}
 	} else {
 		file = filepath.Join(s.cfg.AppDoc, strings.TrimPrefix(path, "_doc/"))

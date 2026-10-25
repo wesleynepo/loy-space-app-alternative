@@ -24,7 +24,7 @@ type UploadEntry struct {
 func (u *Uploads) Load() map[string]UploadEntry {
 	ix := map[string]UploadEntry{}
 	if b, err := os.ReadFile(filepath.Join(u.dir, "index.json")); err == nil {
-		json.Unmarshal(b, &ix)
+		_ = json.Unmarshal(b, &ix)
 	}
 	return ix
 }

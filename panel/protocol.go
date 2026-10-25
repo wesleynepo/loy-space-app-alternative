@@ -183,7 +183,7 @@ func makeKey(idPro int, packed []byte, ts uint32) []byte {
 	var prefix [4]byte
 	s := fmt.Sprintf("%x0000000", idPro)[:8]
 	for i := range prefix {
-		fmt.Sscanf(s[2*i:2*i+2], "%02x", &prefix[i])
+		_, _ = fmt.Sscanf(s[2*i:2*i+2], "%02x", &prefix[i])
 	}
 	sum := md5.Sum(binary.LittleEndian.AppendUint32(append([]byte{}, packed...), ts))
 	return append(prefix[:], sum[:]...)

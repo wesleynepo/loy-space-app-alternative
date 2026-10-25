@@ -16,12 +16,19 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	port := "8765"
 	if len(os.Args) > 1 {
 		port = os.Args[1]
 	}
 	if d := os.Getenv("LED_PANEL_DIR"); d != "" {
-		os.Chdir(d)
+		_ = os.Chdir(d)
 	}
 
 	link := panel.New(".uploads")
@@ -36,7 +43,7 @@ func main() {
 	go func() {
 		<-ctx.Done()
 		if link.Connected() {
-			link.Disconnect()
+			_ = link.Disconnect()
 		}
 		srv.Close()
 	}()
@@ -47,9 +54,9 @@ func main() {
 	}()
 	fmt.Println("http://127.0.0.1:" + port)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 func getenv(k, def string) string {
