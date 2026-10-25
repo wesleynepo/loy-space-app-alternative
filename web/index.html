@@ -3,74 +3,191 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>LED Panel</title>
 <style>
-  :root { --bg:#f6f6f4; --fg:#1d1d1b; --card:#fff; --line:#dcdcd6; --accent:#0b6bcb; --bad:#b3261e; --ok:#1b7f3b; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#141413; --fg:#ecece8; --card:#1e1e1c; --line:#3a3a36; --accent:#5aa2f0; --bad:#f2837c; --ok:#6fcf8e; }
+  /* Material 3 tokens, baseline blue scheme */
+  :root {
+    --primary:#0b57d0; --on-primary:#fff; --primary-container:#d3e3fd; --on-primary-container:#041e49;
+    --secondary-container:#dde3ea; --on-secondary-container:#151c22;
+    --surface:#f8f9fa; --surface-container:#eef1f6; --surface-container-high:#e6eaf0;
+    --on-surface:#1a1c1e; --on-surface-variant:#44474e; --outline:#74777f; --outline-variant:#c4c6d0;
+    --error:#b3261e; --error-container:#f9dedc; --on-error-container:#410e0b;
+    --ok:#146c2e; --ok-container:#c4eed0; --on-ok-container:#002110;
+    --inverse-surface:#2f3033; --inverse-on-surface:#f1f0f4;
+    --shadow1:0 1px 2px rgb(0 0 0/.3), 0 1px 3px 1px rgb(0 0 0/.15);
+    --shadow3:0 1px 3px rgb(0 0 0/.3), 0 4px 8px 3px rgb(0 0 0/.15);
   }
-  * { box-sizing: border-box; }
-  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui, sans-serif; }
-  main { max-width:560px; margin:0 auto; display:grid; gap:16px; }
-  h1 { font-size:20px; margin:0; }
-  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
-  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; margin:0 0 12px; opacity:.7; }
-  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button:disabled { opacity:.45; cursor:default; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-  .slots { display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:10px; }
-  .slot { padding:8px; display:grid; gap:6px; justify-items:center; text-align:center; }
-  .slot img { width:96px; height:96px; image-rendering:pixelated; background:#000; border-radius:4px; }
-  .slot.cur { outline:2px solid var(--accent); }
-  .slot small { opacity:.7; }
-  .tag { font-size:11px; padding:1px 6px; border-radius:99px; border:1px solid var(--line); }
-  .tag.ok { color:var(--ok); border-color:var(--ok); } .tag.no { color:var(--bad); border-color:var(--bad); }
-  #state { font-weight:600; }
-  .on { color:var(--ok); } .off { color:var(--bad); }
-  input[type=range] { flex:1; min-width:160px; }
-  pre { margin:0; max-height:220px; overflow:auto; font:12px/1.4 ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; }
-  #err { color:var(--bad); min-height:1.4em; }
-  #preview { width:128px; height:128px; image-rendering:pixelated; background:#000; border-radius:4px; }
-  #ustatus { opacity:.8; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary:#a8c7fa; --on-primary:#062e6f; --primary-container:#0842a0; --on-primary-container:#d3e3fd;
+      --secondary-container:#3f4759; --on-secondary-container:#dde3ea;
+      --surface:#111314; --surface-container:#1e2022; --surface-container-high:#282a2d;
+      --on-surface:#e3e3e6; --on-surface-variant:#c4c6d0; --outline:#8e9099; --outline-variant:#44474e;
+      --error:#f2b8b5; --error-container:#8c1d18; --on-error-container:#f9dedc;
+      --ok:#6dd58c; --ok-container:#0f5223; --on-ok-container:#c4eed0;
+      --inverse-surface:#e3e3e6; --inverse-on-surface:#2f3033;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--surface); color:var(--on-surface);
+    font:400 14px/20px Roboto, "Google Sans", system-ui, -apple-system, "Segoe UI", sans-serif; letter-spacing:.25px; }
+  header { position:sticky; top:0; z-index:5; background:var(--surface-container); display:flex; align-items:center;
+    gap:12px; height:64px; padding:0 16px; }
+  header h1 { flex:1; margin:0; font-weight:400; font-size:22px; line-height:28px; font-family:inherit; letter-spacing:0; }
+  header svg { fill:var(--primary); flex:none; }
+  main { max-width:600px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  section { background:var(--surface-container); border-radius:16px; padding:16px; }
+  h2 { margin:0 0 16px; font-weight:500; font-size:16px; line-height:24px; font-family:inherit; letter-spacing:.15px; display:flex; align-items:baseline; gap:8px; }
+  h2 small { font-weight:400; font-size:12px; color:var(--on-surface-variant); letter-spacing:.4px; }
+  .hint { display:block; margin-top:12px; font-size:12px; line-height:16px; letter-spacing:.4px; color:var(--on-surface-variant); }
+  .row { display:flex; gap:8px 12px; flex-wrap:wrap; align-items:center; }
+  .row + .row, .slots + .row { margin-top:16px; }
+  .grow { flex:1; }
+
+  /* buttons */
+  button, .btn { font-weight:500; font-size:14px; line-height:20px; font-family:inherit; letter-spacing:.1px; height:40px; padding:0 24px; border-radius:20px;
+    border:0; background:transparent; color:var(--primary); cursor:pointer; display:inline-flex; align-items:center; gap:8px;
+    position:relative; overflow:hidden; transition:background-color .15s, box-shadow .15s; }
+  button:hover:not(:disabled), .btn:hover { background:color-mix(in srgb, var(--primary) 8%, transparent); }
+  button:focus-visible, .btn:focus-within { outline:2px solid var(--primary); outline-offset:2px; }
+  button:active:not(:disabled) { background:color-mix(in srgb, var(--primary) 12%, transparent); }
+  button.primary { background:var(--primary); color:var(--on-primary); }
+  button.primary:hover:not(:disabled) { background:color-mix(in srgb, var(--on-primary) 8%, var(--primary)); box-shadow:var(--shadow1); }
+  button.tonal { background:var(--secondary-container); color:var(--on-secondary-container); }
+  button.tonal:hover:not(:disabled) { background:color-mix(in srgb, var(--on-secondary-container) 8%, var(--secondary-container)); box-shadow:var(--shadow1); }
+  button.tonal.active { background:var(--primary-container); color:var(--on-primary-container); }
+  button.outlined, .btn { border:1px solid var(--outline); }
+  button:disabled { color:color-mix(in srgb, var(--on-surface) 38%, transparent); cursor:default; }
+  button.primary:disabled, button.tonal:disabled { background:color-mix(in srgb, var(--on-surface) 12%, transparent); }
+  button.outlined:disabled { border-color:color-mix(in srgb, var(--on-surface) 12%, transparent); }
+  button svg, .btn svg { width:18px; height:18px; fill:currentColor; margin-left:-8px; }
+  .btn input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
+
+  /* connection */
+  .status { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 12px; border-radius:8px; font-weight:500; font-size:14px; }
+  .status::before { content:""; width:8px; height:8px; border-radius:50%; background:currentColor; }
+  .status.on { background:var(--ok-container); color:var(--on-ok-container); }
+  .status.off { background:var(--error-container); color:var(--on-error-container); }
+  .status.wait { background:var(--secondary-container); color:var(--on-secondary-container); }
+  .status.wait::before { animation:pulse 1s ease-in-out infinite alternate; }
+  @keyframes pulse { to { opacity:.25; } }
+  #connErr { margin:12px 0 0; color:var(--error); }
+  #connErr:empty { display:none; }
+  #info { color:var(--on-surface-variant); }
+
+  /* slots */
+  .slots { display:grid; }
+  .slot-row { display:flex; align-items:center; gap:16px; min-height:64px; padding:8px 8px 8px 12px; }
+  .slot-row + .slot-row { border-top:1px solid var(--outline-variant); }
+  .slot-row.cur { border-radius:12px; background:var(--primary-container); color:var(--on-primary-container); border-top-color:transparent; }
+  .slot-row.cur + .slot-row { border-top-color:transparent; }
+  .lead { width:48px; height:48px; flex:none; border-radius:8px; background:#000; color:#fff; display:grid; place-items:center;
+    font-weight:500; font-size:16px; image-rendering:pixelated; }
+  .meta { flex:1; min-width:0; display:grid; gap:2px; }
+  .meta .name { font-weight:500; font-size:16px; line-height:24px; }
+  .meta small { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--on-surface-variant); text-transform:capitalize; }
+  .slot-row.cur .meta small { color:inherit; opacity:.85; }
+  .slot-row .tonal { height:36px; padding:0 16px; }
+  .slot-row.cur .tonal { background:var(--primary); color:var(--on-primary); }
+  .icon-btn { width:40px; height:40px; padding:0; justify-content:center; border-radius:50%; color:var(--error); }
+  .icon-btn svg { margin:0; width:24px; height:24px; }
+  .empty { margin:0; color:var(--on-surface-variant); }
+
+  .chip { text-transform:none; display:inline-flex; align-items:center; height:24px; padding:0 8px; border-radius:8px; font-size:12px; font-weight:500; letter-spacing:.5px; }
+  .chip.ok { background:var(--ok-container); color:var(--on-ok-container); }
+  .chip.no { background:var(--error-container); color:var(--on-error-container); }
+
+  .empty { grid-column:1/-1; margin:0; color:var(--on-surface-variant); }
+
+  /* upload */
+  #ustatus { color:var(--on-surface-variant); }
+
+  /* upload dialog */
+  dialog { width:calc(100vw - 32px); max-width:520px; max-height:calc(100dvh - 32px); overflow:auto; padding:24px; border:0; border-radius:28px;
+    background:var(--surface-container-high); color:var(--on-surface); box-shadow:var(--shadow3); }
+  dialog::backdrop { background:rgb(0 0 0/.4); }
+  dialog[open] { display:grid; gap:16px; }
+  dialog h2 { margin:0; font-size:24px; line-height:32px; font-weight:400; letter-spacing:0; }
+  dialog .btn { justify-self:start; }
+  #cropper { display:grid; gap:16px; }
+  #stage { position:relative; justify-self:center; touch-action:none; user-select:none; line-height:0; border-radius:8px; overflow:hidden; background:#000; }
+  #stageImg { display:block; }
+  #box { position:absolute; border:2px solid #fff; box-shadow:0 0 0 9999px rgb(0 0 0/.55); cursor:move; touch-action:none; }
+  #handle { position:absolute; right:-10px; bottom:-10px; width:20px; height:20px; border-radius:50%; background:var(--primary);
+    border:2px solid #fff; cursor:nwse-resize; touch-action:none; }
+  .result { flex-wrap:nowrap; align-items:flex-start; }
+  .result .hint { margin:0; }
+  #preview { width:96px; height:96px; image-rendering:pixelated; background:#000; border-radius:8px; flex:none; }
+  .actions { display:flex; justify-content:flex-end; gap:8px; }
+
+  /* display controls */
+  select { font:inherit; height:40px; padding:0 12px; border-radius:8px; border:1px solid var(--outline); background:var(--surface-container);
+    color:var(--on-surface); cursor:pointer; }
+  select:focus-visible { outline:2px solid var(--primary); outline-offset:1px; }
+  select:disabled { opacity:.38; cursor:default; }
+  label { color:var(--on-surface-variant); display:inline-flex; align-items:center; gap:8px; }
+  input[type=range] { --fill:100%; flex:1; min-width:160px; height:40px; margin:0; appearance:none; background:transparent; cursor:pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height:6px; border-radius:3px;
+    background:linear-gradient(to right, var(--primary) var(--fill), var(--secondary-container) var(--fill)); }
+  input[type=range]::-webkit-slider-thumb { appearance:none; width:20px; height:20px; border-radius:50%; background:var(--primary); margin-top:-7px;
+    box-shadow:var(--shadow1); transition:box-shadow .15s; }
+  input[type=range]:hover::-webkit-slider-thumb, input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow:0 0 0 8px color-mix(in srgb, var(--primary) 12%, transparent); }
+  input[type=range]::-moz-range-track { height:6px; border-radius:3px; background:var(--secondary-container); }
+  input[type=range]::-moz-range-progress { height:6px; border-radius:3px; background:var(--primary); }
+  input[type=range]::-moz-range-thumb { width:20px; height:20px; border:0; border-radius:50%; background:var(--primary); }
+  input[type=range]:disabled { opacity:.38; cursor:default; }
+  #brightVal { min-width:1.5em; text-align:right; font-weight:500; color:var(--on-surface); }
+
+  /* traffic */
+  details summary { cursor:pointer; font-weight:500; font-size:16px; line-height:24px; font-family:inherit; list-style:none; display:flex; justify-content:space-between; }
+  details summary::-webkit-details-marker { display:none; }
+  details summary::after { content:"expand_more"; font-size:0; width:24px; height:24px; background:currentColor;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='M480-345 240-585l56-56 184 184 184-184 56 56-240 240Z'/%3E%3C/svg%3E") center/contain no-repeat;
+    transition:transform .2s; }
+  details[open] summary::after { transform:rotate(180deg); }
+  pre { margin:16px 0 0; padding:12px; border-radius:8px; background:var(--surface); max-height:220px; overflow:auto;
+    font:12px/16px ui-monospace, "Roboto Mono", monospace; white-space:pre-wrap; word-break:break-all; }
+
+  /* snackbar */
+  #err { position:fixed; inset:auto; left:50%; bottom:16px; margin:0; border:0; transform:translateX(-50%); z-index:10; width:max-content; max-width:calc(100vw - 32px);
+    padding:14px 16px; border-radius:4px; background:var(--inverse-surface); color:var(--inverse-on-surface); box-shadow:var(--shadow3); }
+  #err:empty { display:none; }
 </style>
 </head>
 <body>
-<main>
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h4v4H3V3Zm7 0h4v4h-4V3Zm7 0h4v4h-4V3ZM3 10h4v4H3v-4Zm7 0h4v4h-4v-4Zm7 0h4v4h-4v-4ZM3 17h4v4H3v-4Zm7 0h4v4h-4v-4Zm7 0h4v4h-4v-4Z"/></svg>
   <h1>LED Panel</h1>
+  <span id="state" class="status off">disconnected</span>
+</header>
+<main>
   <section>
     <h2>Connection</h2>
     <div class="row">
-      <span id="state" class="off">disconnected</span>
+      <button id="connect" class="primary">Connect</button>
+      <button id="disconnect" class="outlined">Disconnect</button>
       <span id="info"></span>
     </div>
-    <div class="row" style="margin-top:12px">
-      <button id="connect" class="primary">Connect</button>
-      <button id="disconnect">Disconnect</button>
-    </div>
-    <div id="err"></div>
+    <p id="connErr"></p>
   </section>
   <section>
-    <h2>Slots <small id="usage" style="font-weight:normal;opacity:.7"></small></h2>
+    <h2>Slots <small id="usage"></small></h2>
     <div class="slots" id="slots"></div>
-    <div class="row" style="margin-top:12px"><button id="refresh">Refresh from panel</button></div>
-  </section>
-  <section>
-    <h2>Upload</h2>
     <div class="row">
-      <input type="file" id="file" accept="image/*">
-    </div>
-    <div class="row" style="margin-top:12px">
-      <canvas id="preview" width="64" height="64"></canvas>
-      <button id="upload" class="primary" disabled>Upload to panel</button>
+      <button id="refresh" class="tonal">
+        <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q69 0 132 28.500T720-690v-110h80v280H520v-80h168q-32-56-87.500-88T480-720q-100 0-170 70t-70 170q0 100 70 170t170 70q77 0 139-44t87-116h84q-28 106-114 173t-196 67Z"/></svg>
+        Refresh from panel</button>
+      <button id="openUpload" class="primary">
+        <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/></svg>
+        Upload image</button>
       <span id="ustatus"></span>
     </div>
-    <small style="opacity:.7">Cropped to a centred square and resized to 64×64. Goes to the first free slot (6–9); slots 0–5 are never overwritten.</small>
   </section>
   <section>
     <h2>Display</h2>
     <div class="row">
-      <button id="power" data-needs-conn="1" disabled>Screen: ?</button>
+      <button id="power" class="tonal" data-needs-conn="1" disabled>Screen: ?</button>
       <label>Rotation
         <select id="rotation" data-needs-conn="1" disabled>
           <option value="0">0°</option><option value="90">90°</option>
@@ -78,21 +195,56 @@
         </select>
       </label>
     </div>
-    <div class="row" style="margin-top:12px">
+    <div class="row">
       <label for="bright">Brightness</label>
       <input type="range" id="bright" min="1" max="7" value="7" disabled>
       <span id="brightVal">7</span>
     </div>
-    <small style="opacity:.7">Measured on this panel: levels above 7 look the same as 7.</small>
+    <small class="hint">Measured on this panel: levels above 7 look the same as 7.</small>
   </section>
   <section>
-    <h2>Traffic</h2>
-    <pre id="log"></pre>
+    <details>
+      <summary>Traffic</summary>
+      <pre id="log"></pre>
+    </details>
   </section>
 </main>
+<dialog id="uploadDialog" aria-labelledby="uploadTitle">
+  <h2 id="uploadTitle">Upload image</h2>
+  <label class="btn">
+    <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M440-200h80v-167l64 64 56-57-160-160-160 160 57 56 63-63v167ZM240-80q-33 0-56.500-23.500T160-160v-640q0-33 23.500-56.500T240-880h320l240 240v480q0 33-23.500 56.500T720-80H240Zm280-520v-200H240v640h480v-440H520Z"/></svg>
+    Choose image
+    <input type="file" id="file" accept="image/*">
+  </label>
+  <div id="cropper" hidden>
+    <div id="stage">
+      <canvas id="stageImg"></canvas>
+      <div id="box"><span id="handle"></span></div>
+    </div>
+    <div class="row">
+      <label for="zoom">Size</label>
+      <input type="range" id="zoom" min="0" max="100" value="100">
+    </div>
+    <div class="row result">
+      <canvas id="preview" width="64" height="64"></canvas>
+      <small class="hint">Drag the box to move it, drag the corner or use the slider to resize. The selection is scaled to 64×64 and goes to the first free slot (6–9); slots 0–5 are never overwritten.</small>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="cancelUpload" class="outlined">Cancel</button>
+    <button id="upload" class="primary" disabled>Upload to panel</button>
+  </div>
+</dialog>
+<div id="err" role="alert" popover="manual"></div>
 <script>
 const $ = id => document.getElementById(id);
+const syncFill = () => $('bright').style.setProperty('--fill', (($('bright').value - 1) / 6 * 100) + '%');
+const FIRST_FREE_SLOT = 6, LAST_SLOT = 9;   // the server refuses uploads and deletes outside these
 let wasConnected = null;
+new MutationObserver(() => {   // popover keeps the snackbar above an open modal
+  const err = $('err');
+  if (err.textContent) { if (!err.matches(':popover-open')) err.showPopover(); } else if (err.matches(':popover-open')) err.hidePopover();
+}).observe($('err'), {childList: true, characterData: true, subtree: true});
 
 async function api(path, body) {
   $('err').textContent = '';
@@ -112,36 +264,53 @@ async function loadSlots() {
   $('usage').textContent = data.used === null ? '' : `${data.used} of ${data.total} used, ${data.total - data.used} free`;
   const box = $('slots');
   box.replaceChildren();
+  if (!data.slots) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'Connect to the panel to see its slots.';
+    box.append(empty);
+    return;
+  }
   for (const s of data.slots) {
-    const b = document.createElement('button');
-    b.className = 'slot' + (s.slot === data.current ? ' cur' : '');
-    b.dataset.needsConn = '1';
-    b.disabled = !wasConnected;
-    const img = Object.assign(document.createElement('img'), {src: s.src, alt: 'slot ' + s.slot});
-    const label = document.createElement('span');
-    label.textContent = 'Slot ' + s.slot;
+    const row = document.createElement('div');
+    row.className = 'slot-row' + (s.slot === data.current ? ' cur' : '');
+    const lead = s.type === 'unknown' ? document.createElement('div') : Object.assign(document.createElement('img'), {src: s.src, alt: 'slot ' + s.slot});
+    lead.className = 'lead';
+    if (s.type === 'unknown') lead.textContent = s.slot;
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = 'Slot ' + s.slot;
     const sub = document.createElement('small');
-    sub.textContent = s.type;
-    b.append(img, label, sub);
+    sub.append(s.type);
     if (s.match !== null) {
       const t = document.createElement('span');
-      t.className = 'tag ' + (s.match ? 'ok' : 'no');
-      t.textContent = s.match ? 'on panel' : 'differs';
-      b.append(t);
+      t.className = 'chip ' + (s.match ? 'ok' : 'no');
+      t.textContent = s.match ? 'On panel' : 'Differs';
+      sub.append(t);
     }
-    if (s.type === 'upload') {
-      const del = document.createElement('span');
-      del.className = 'tag no';
-      del.textContent = 'delete';
-      del.style.cursor = 'pointer';
-      del.onclick = e => {
-        e.stopPropagation();
-        if (wasConnected && confirm('Delete slot ' + s.slot + ' from the panel?')) api('/api/delete', {slot: s.slot});
-      };
-      b.append(del);
+    meta.append(name, sub);
+    const show = document.createElement('button');
+    show.className = 'tonal';
+    show.dataset.needsConn = '1';
+    show.disabled = !wasConnected;
+    show.textContent = s.slot === data.current ? 'Showing' : 'Show';
+    show.setAttribute('aria-label', 'Show slot ' + s.slot);
+    show.onclick = () => api('/api/image', {index: s.slot});
+    row.append(lead, meta, show);
+    if (s.type !== 'app' && s.slot >= FIRST_FREE_SLOT && s.slot <= LAST_SLOT) {
+      const del = document.createElement('button');
+      del.className = 'icon-btn';
+      del.dataset.needsConn = '1';
+      del.disabled = !wasConnected;
+      del.title = 'Delete slot ' + s.slot;
+      del.setAttribute('aria-label', 'Delete slot ' + s.slot);
+      del.innerHTML = '<svg viewBox="0 -960 960 960" aria-hidden="true" fill="currentColor"><path d="M280-120q-33 0-56.500-23.500T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.500 56.500T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/></svg>';
+      del.onclick = () => { if (wasConnected && confirm('Delete slot ' + s.slot + ' from the panel?')) api('/api/delete', {slot: s.slot}); };
+      row.append(del);
     }
-    b.onclick = () => api('/api/image', {index: s.slot});
-    box.append(b);
+    box.append(row);
   }
 }
 
@@ -149,12 +318,14 @@ function render(s) {
   if (s.connected === undefined) return;
   if (wasConnected !== null && s.connected !== wasConnected) { wasConnected = s.connected; loadSlots(); loadState(); }
   wasConnected = s.connected; updateUpload();
-  $('state').textContent = s.connected ? 'connected' : 'disconnected';
-  $('state').className = s.connected ? 'on' : 'off';
+  $('state').textContent = s.connected ? 'connected' : s.connecting ? 'connecting…' : 'disconnected';
+  $('state').className = 'status ' + (s.connected ? 'on' : s.connecting ? 'wait' : 'off');
+  $('connErr').textContent = s.connected || s.connecting ? '' : s.connectError || '';
   $('info').textContent = s.info || '';
   for (const el of document.querySelectorAll('[data-needs-conn]')) el.disabled = !s.connected;
   $('bright').disabled = !s.connected;
-  $('connect').disabled = s.connected;
+  $('connect').disabled = s.connected || s.connecting;
+  $('connect').textContent = s.connecting ? 'Connecting…' : s.connectError && !s.connected ? 'Retry' : 'Connect';
   $('disconnect').disabled = !s.connected;
   const log = $('log');
   const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
@@ -163,34 +334,91 @@ function render(s) {
 }
 
 $('refresh').onclick = loadSlots;
-$('connect').onclick = async () => { $('connect').disabled = true; $('connect').textContent = 'Connecting…';
-  await api('/api/connect', {}); $('connect').textContent = 'Connect'; };
+$('connect').onclick = async () => { $('connect').disabled = true; $('connect').textContent = 'Connecting…'; await api('/api/connect', {}); };
 $('disconnect').onclick = () => api('/api/disconnect', {});
 let hasImage = false, uploading = false;
 const updateUpload = () => { $('upload').disabled = !(wasConnected && hasImage) || uploading; };
 
-$('file').onchange = async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const bmp = await createImageBitmap(file);
-  const side = Math.min(bmp.width, bmp.height);   // centred square crop
+const dlg = $('uploadDialog');
+const MIN_SIDE = 16;                       // smallest selectable source square, in image pixels
+let bmp = null, fit = 1;                   // fit: displayed px per image px
+const sel = {x: 0, y: 0, s: 0};            // selection in displayed px
+
+function drawSelection() {
+  const box = $('box').style;
+  box.left = sel.x + 'px'; box.top = sel.y + 'px'; box.width = box.height = sel.s + 'px';
   const ctx = $('preview').getContext('2d');
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 64, 64);
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, 64, 64);
+  ctx.drawImage(bmp, sel.x / fit, sel.y / fit, sel.s / fit, sel.s / fit, 0, 0, 64, 64);
+  const lo = Math.min(MIN_SIDE, bmp.width, bmp.height) * fit, hi = Math.min(bmp.width, bmp.height) * fit;
+  $('zoom').value = hi === lo ? 100 : (sel.s - lo) / (hi - lo) * 100;
+}
+
+function setSize(size, cx, cy) {           // resize around (cx, cy), keeping the selection inside the image
+  const lo = Math.min(MIN_SIDE, bmp.width, bmp.height) * fit;
+  sel.s = Math.max(lo, Math.min(size, bmp.width * fit, bmp.height * fit));
+  sel.x = Math.max(0, Math.min(cx - sel.s / 2, bmp.width * fit - sel.s));
+  sel.y = Math.max(0, Math.min(cy - sel.s / 2, bmp.height * fit - sel.s));
+  drawSelection();
+}
+
+$('openUpload').onclick = () => dlg.showModal();
+$('cancelUpload').onclick = () => dlg.close();
+dlg.addEventListener('cancel', e => { if (uploading) e.preventDefault(); });
+
+$('file').onchange = async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  bmp = await createImageBitmap(file);
+  fit = Math.min(1, (dlg.clientWidth - 48) / bmp.width, 320 / bmp.height);
+  const c = $('stageImg');
+  c.width = Math.round(bmp.width * fit); c.height = Math.round(bmp.height * fit);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  $('cropper').hidden = false;
+  const side = Math.min(c.width, c.height);
+  setSize(side, c.width / 2, c.height / 2);
   hasImage = true; $('ustatus').textContent = ''; updateUpload();
 };
+
+$('zoom').oninput = e => {
+  const lo = Math.min(MIN_SIDE, bmp.width, bmp.height) * fit, hi = Math.min(bmp.width, bmp.height) * fit;
+  setSize(lo + (hi - lo) * e.target.value / 100, sel.x + sel.s / 2, sel.y + sel.s / 2);
+};
+
+function drag(el, onMove) {
+  el.onpointerdown = e => {
+    e.preventDefault(); e.stopPropagation();
+    el.setPointerCapture(e.pointerId);
+    const o = $('stage').getBoundingClientRect(), start = {x: sel.x, y: sel.y, s: sel.s, px: e.clientX, py: e.clientY};
+    el.onpointermove = m => onMove(m, o, start);
+    el.onpointerup = el.onpointercancel = () => { el.onpointermove = null; };
+  };
+}
+drag($('box'), (m, o, st) => {
+  sel.x = Math.max(0, Math.min(st.x + m.clientX - st.px, bmp.width * fit - sel.s));
+  sel.y = Math.max(0, Math.min(st.y + m.clientY - st.py, bmp.height * fit - sel.s));
+  drawSelection();
+});
+drag($('handle'), (m, o, st) => {          // the opposite corner stays put
+  const size = Math.max(m.clientX - o.left - st.x, m.clientY - o.top - st.y);
+  const lo = Math.min(MIN_SIDE, bmp.width, bmp.height) * fit;
+  sel.s = Math.max(lo, Math.min(size, bmp.width * fit - st.x, bmp.height * fit - st.y));
+  sel.x = st.x; sel.y = st.y;
+  drawSelection();
+});
 
 $('upload').onclick = async () => {
   const px = $('preview').getContext('2d').getImageData(0, 0, 64, 64).data;   // RGBA, composited on black
   let bin = '';
   for (let i = 0; i < px.length; i += 4) bin += String.fromCharCode(px[i], px[i + 1], px[i + 2]);
-  uploading = true; updateUpload(); $('ustatus').textContent = 'Uploading…';
+  uploading = true; updateUpload(); $('cancelUpload').disabled = true; $('upload').textContent = 'Uploading…';
   const t0 = performance.now();
   const res = await api('/api/upload', {rgb: btoa(bin)});
-  uploading = false; updateUpload();
-  $('ustatus').textContent = $('err').textContent ? 'Failed'
-    : `Saved to slot ${res.slot} in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+  uploading = false; $('cancelUpload').disabled = false; $('upload').textContent = 'Upload to panel'; updateUpload();
+  if ($('err').textContent) { $('ustatus').textContent = 'Failed'; return; }
+  $('ustatus').textContent = `Saved to slot ${res.slot} in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+  dlg.close();
 };
 
 let screenOn = null;
@@ -201,13 +429,15 @@ async function loadState() {
   if (!res.ok) { $('err').textContent = s.error || 'state query failed'; return; }
   screenOn = s.power;
   $('power').textContent = 'Screen: ' + (s.power ? 'on' : 'off');
+  $('power').classList.toggle('active', s.power);
   $('rotation').value = String(s.rotation);
   $('bright').value = Math.min(s.brightness, 7);
   $('brightVal').textContent = s.brightness;
+  syncFill();
 }
 $('power').onclick = async () => { await api('/api/power', {on: !screenOn}); loadState(); };
 $('rotation').onchange = async e => { await api('/api/rotation', {degrees: +e.target.value}); loadState(); };
-$('bright').oninput = e => $('brightVal').textContent = e.target.value;
+$('bright').oninput = e => { $('brightVal').textContent = e.target.value; syncFill(); };
 $('bright').onchange = async e => { await api('/api/brightness', {level: +e.target.value}); loadState(); };
 
 setInterval(() => fetch('/api/status').then(r => r.json()).then(render).catch(() => {}), 2000);

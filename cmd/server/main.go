@@ -40,6 +40,11 @@ func main() {
 		}
 		srv.Close()
 	}()
+	go func() {
+		if err := link.Connect(); err != nil {
+			link.Note("startup connect failed: %v", err)
+		}
+	}()
 	fmt.Println("http://127.0.0.1:" + port)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintln(os.Stderr, err)

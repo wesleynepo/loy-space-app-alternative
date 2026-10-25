@@ -99,10 +99,7 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 				resp["error"] = err.Error()
 			} else {
 				resp["current"], resp["used"] = cur, len(keys)
-				for i := range slots {
-					m := keys[slots[i].Slot] == slots[i].Key
-					slots[i].Match = &m
-				}
+				resp["slots"] = withPanelKeys(slots, keys)
 			}
 		}
 		writeJSON(w, 200, resp)
