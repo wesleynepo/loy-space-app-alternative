@@ -4,3 +4,7 @@ __pycache__/
 .uploads/
 # BLE captures include the host's Bluetooth address and the panel's identifiers
 *.pklg
+# Bend build output
+bend/ble_hello
+bend/ble/libloyble.dylib
+bend/ble/probe
