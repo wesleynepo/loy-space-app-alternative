@@ -2,9 +2,57 @@ package panel
 
 import (
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"strings"
+
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 )
+
+// Color is an RGB colour that reads from and writes to JSON as "#rrggbb".
+type Color [3]byte
+
+func (c *Color) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	raw, err := hex.DecodeString(strings.TrimPrefix(s, "#"))
+	if err != nil || len(raw) != 3 || !strings.HasPrefix(s, "#") {
+		return fmt.Errorf("bad colour %q, want #rrggbb", s)
+	}
+	copy(c[:], raw)
+	return nil
+}
+
+// TextRequest is one text upload. Slot nil means the first free slot.
+type TextRequest struct {
+	Slot *int   `json:"slot"`
+	Text string `json:"text"`
+	FG   Color  `json:"fg"`
+	BG   Color  `json:"bg"`
+}
+
+// preview draws a 64x64 RGB thumbnail of the text for the slot list. The panel draws the real thing itself.
+func (r TextRequest) preview() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	draw.Draw(img, img.Bounds(), image.NewUniform(color.RGBA{r.BG[0], r.BG[1], r.BG[2], 255}), image.Point{}, draw.Src)
+	d := font.Drawer{Dst: img, Src: image.NewUniform(color.RGBA{r.FG[0], r.FG[1], r.FG[2], 255}),
+		Face: basicfont.Face7x13, Dot: fixed.P(0, 12)}
+	d.DrawString(r.Text)
+	rgb := make([]byte, 0, 64*64*3)
+	for i := 0; i < len(img.Pix); i += 4 {
+		rgb = append(rgb, img.Pix[i], img.Pix[i+1], img.Pix[i+2])
+	}
+	return rgb
+}
 
 // Text programs (LOY SPACE "text" item), decoded from trace-2.pklg and the app's `Q`/`F`/`ie` builders.
 // The whole program fits one frame, so unlike an image there are no separate start/item/chunk frames:

@@ -95,3 +95,22 @@ func TestTextMatchesCapture(t *testing.T) {
 		t.Error("non-ASCII accepted")
 	}
 }
+
+func TestTextRequestJSONAndPreview(t *testing.T) {
+	var r TextRequest
+	if err := json.Unmarshal([]byte(`{"text":"Hi","fg":"#ff0000","bg":"#000010"}`), &r); err != nil {
+		t.Fatal(err)
+	}
+	if r.FG != (Color{255, 0, 0}) || r.BG != (Color{0, 0, 16}) {
+		t.Fatalf("colours %v %v", r.FG, r.BG)
+	}
+	for _, bad := range []string{`{"fg":"ff0000"}`, `{"fg":"#ff00"}`, `{"fg":"#zzzzzz"}`} {
+		if json.Unmarshal([]byte(bad), &r) == nil {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+	p := r.preview()
+	if len(p) != 64*64*3 || !bytes.Equal(p[:3], []byte{0, 0, 16}) || !bytes.Contains(p, []byte{255, 0, 0}) {
+		t.Error("preview should be the background with red text on it")
+	}
+}

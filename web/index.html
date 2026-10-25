@@ -464,7 +464,7 @@ $('cancelText').onclick = () => tdlg.close();
 tdlg.addEventListener('cancel', e => { if (uploading) e.preventDefault(); });
 $('sendText').onclick = async () => {
   uploading = true; updateUpload(); $('cancelText').disabled = true; $('sendText').textContent = 'Sending…';
-  const res = await api('/api/upload-text', {text: $('textIn').value, fg: $('fgIn').value, bg: $('bgIn').value, rgb: rgbOf($('textPreview'))});
+  const res = await api('/api/upload-text', {text: $('textIn').value, fg: $('fgIn').value, bg: $('bgIn').value});
   uploading = false; $('cancelText').disabled = false; $('sendText').textContent = 'Send to panel'; updateUpload();
   if ($('err').textContent) { $('ustatus').textContent = 'Failed'; return; }
   $('ustatus').textContent = `Saved text to slot ${res.slot}`;

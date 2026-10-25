@@ -349,27 +349,23 @@ func (l *Link) sendAcked(bodies [][]byte, slot int) error {
 }
 
 // UploadText sends a one-line ASCII text program to the requested slot, or the first free one, and returns the slot.
-// fg and bg are RGB. preview is the 64x64 RGB picture kept for the slot list; the panel draws the text itself.
-func (l *Link) UploadText(requested *int, text string, fg, bg [3]byte, preview []byte) (int, error) {
-	if len(preview) != 64*64*3 {
-		return 0, errors.New("expected a 64x64 RGB preview (12288 bytes)")
-	}
-	if text == "" {
+func (l *Link) UploadText(req TextRequest) (int, error) {
+	if req.Text == "" {
 		return 0, errors.New("text is empty")
 	}
-	for _, r := range text {
+	for _, r := range req.Text {
 		if r < 0x20 || r > 0x7e {
 			return 0, errors.New("text must be printable ASCII")
 		}
 	}
-	slot, err := l.pickSlot(requested)
+	slot, err := l.pickSlot(req.Slot)
 	if err != nil {
 		return 0, err
 	}
 	ts := uint32(time.Now().Unix())
-	key := makeKey(slot+1, []byte(text), ts)
+	key := makeKey(slot+1, []byte(req.Text), ts)
 	// The capture's text ended in a newline, so keep it: that is the one shape known to work.
-	body, err := textBody(slot, text+"\n", colorInt(fg), colorInt(bg), key, ts, 64, 64)
+	body, err := textBody(slot, req.Text+"\n", colorInt(req.FG), colorInt(req.BG), key, ts, 64, 64)
 	if err != nil {
 		return 0, err
 	}
@@ -377,12 +373,12 @@ func (l *Link) UploadText(requested *int, text string, fg, bg [3]byte, preview [
 		return 0, err
 	}
 	l.Note("uploaded text to slot %d", slot)
-	return slot, l.uploads.record(slot, preview, hex.EncodeToString(key), int64(ts))
+	return slot, l.uploads.record(slot, req.preview(), hex.EncodeToString(key), int64(ts))
 }
 
 // colorInt is how the app writes a colour: three bytes R, G, B, which textBody writes little-endian. [inferred: the
 // capture's white and black cannot tell RGB from BGR]
-func colorInt(c [3]byte) uint32 { return uint32(c[0]) | uint32(c[1])<<8 | uint32(c[2])<<16 }
+func colorInt(c Color) uint32 { return uint32(c[0]) | uint32(c[1])<<8 | uint32(c[2])<<16 }
 
 func inSlotRange(slot int) bool { return FirstFreeSlot <= slot && slot <= LastSlot }
 

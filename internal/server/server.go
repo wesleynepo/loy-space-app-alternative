@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -142,15 +141,15 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.link.Status())
 	}
 	var args struct {
-		Index   *int   `json:"index"`
-		Slot    *int   `json:"slot"`
-		RGB     string `json:"rgb"`
-		Text    string `json:"text"`
-		FG      string `json:"fg"`
-		BG      string `json:"bg"`
-		On      bool   `json:"on"`
-		Degrees *int   `json:"degrees"`
-		Level   *int   `json:"level"`
+		Index   *int        `json:"index"`
+		Slot    *int        `json:"slot"`
+		RGB     string      `json:"rgb"`
+		Text    string      `json:"text"`
+		FG      panel.Color `json:"fg"`
+		BG      panel.Color `json:"bg"`
+		On      bool        `json:"on"`
+		Degrees *int        `json:"degrees"`
+		Level   *int        `json:"level"`
 	}
 	if body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20)); len(bytes.TrimSpace(body)) > 0 {
 		if err := json.Unmarshal(body, &args); err != nil {
@@ -190,18 +189,7 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		resp["slot"] = slot
 		writeJSON(w, 200, resp)
 	case "/api/upload-text":
-		preview, err := base64.StdEncoding.DecodeString(args.RGB)
-		var fg, bg [3]byte
-		if err == nil {
-			fg, err = parseColor(args.FG)
-		}
-		if err == nil {
-			bg, err = parseColor(args.BG)
-		}
-		var slot int
-		if err == nil {
-			slot, err = s.link.UploadText(args.Slot, args.Text, fg, bg, preview)
-		}
+		slot, err := s.link.UploadText(panel.TextRequest{Slot: args.Slot, Text: args.Text, FG: args.FG, BG: args.BG})
 		if err != nil {
 			reply(err)
 			return
@@ -232,14 +220,4 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	default:
 		fail(w, 404, errors.New("not found"))
 	}
-}
-
-// parseColor reads "#rrggbb".
-func parseColor(s string) (c [3]byte, err error) {
-	b, err := hex.DecodeString(strings.TrimPrefix(s, "#"))
-	if err != nil || len(b) != 3 || !strings.HasPrefix(s, "#") {
-		return c, fmt.Errorf("bad colour %q, want #rrggbb", s)
-	}
-	copy(c[:], b)
-	return c, nil
 }

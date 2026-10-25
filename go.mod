@@ -2,7 +2,10 @@ module github.com/wesleynepo/led-panel
 
 go 1.25.0
 
-require tinygo.org/x/bluetooth v0.16.0
+require (
+	golang.org/x/image v0.20.0
+	tinygo.org/x/bluetooth v0.16.0
+)
 
 require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
