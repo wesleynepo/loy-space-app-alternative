@@ -23,7 +23,10 @@ const (
 
 const firstSeq = 50
 
-var errNotConnected = errors.New("not connected")
+var (
+	errNotConnected = errors.New("not connected")
+	errShortReply   = errors.New("panel sent a reply that is too short")
+)
 
 type Link struct {
 	mu      sync.Mutex
@@ -284,6 +287,9 @@ func (l *Link) ReadState() (map[string]any, error) {
 			if err != nil {
 				return err
 			}
+			if len(r.Body) == 0 {
+				return errShortReply
+			}
 			out[i] = r.Body[len(r.Body)-1]
 		}
 		return nil
@@ -415,6 +421,9 @@ func (l *Link) PanelState() (int, map[int]string, error) {
 		r, err := l.send(build(seq, []byte{0x03, 0x36, 0x00}), seq)
 		if err != nil {
 			return err
+		}
+		if len(r.Body) < 5 {
+			return errShortReply
 		}
 		cur = int(r.Body[4])
 		for first := 0; first < TotalSlots; first += 10 { // the app reads the table ten slots at a time
