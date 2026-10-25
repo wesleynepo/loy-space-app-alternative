@@ -19,7 +19,7 @@ func TestMatchesPython(t *testing.T) {
 	if err := json.Unmarshal(raw, &v); err != nil {
 		t.Fatal(err)
 	}
-	hx := func(b []byte) string { return hex.EncodeToString(b) }
+	hx := hex.EncodeToString
 	sh := func(b []byte) string { s := sha256.Sum256(b); return hex.EncodeToString(s[:]) }
 	check := func(name, got string) {
 		if v[name] != got {

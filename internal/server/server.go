@@ -49,7 +49,7 @@ func writeJSON(w http.ResponseWriter, code int, obj any) {
 	b, _ := json.Marshal(obj)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	w.Write(b)
+	_, _ = w.Write(b)
 }
 
 func fail(w http.ResponseWriter, code int, err error) {
@@ -113,10 +113,10 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", ctype)
 		w.Header().Set("Cache-Control", "max-age=3600")
-		w.Write(body)
+		_, _ = w.Write(body)
 	case path == "/":
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(s.indexHTML())
+		_, _ = w.Write(s.indexHTML())
 	default:
 		fail(w, 404, errors.New("not found"))
 	}

@@ -6,3 +6,4 @@ __pycache__/
 *.pklg
 /led-panel
 /.verify/
+coverage.out
