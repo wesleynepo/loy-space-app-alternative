@@ -183,6 +183,29 @@ Checked against captured example: `020901010c01050d01000e010012070d000000c003001
 - Final chunk length 783 = `0f 03`, TLV `82 0f 03`.
 - Frames: start, 13 data frames, finish. Each frame gets its own `sno`/`SEQ`.
 
+### 2.3b Text program [code + capture]
+
+Decoded from `trace-2.pklg` (frame at 96.3s, text "Wesley Text") and the app's builders `Q`, `F`, `ie`. The whole program is **one frame**, not start/item/chunk frames, because it is under the 997-byte single-frame limit (`ne` splits above that). Reproduced byte for byte by `textBody` in `panel/text.go`.
+
+```
+02 | 08 02 00 SLOT | 09 01 01 | 0c 01 SLOT | 1c 06 00 00 01 00 00 00 | 0d 01 00 | 1d 09 0 0 W H 0     start + region
+   | 09 01 01 | 0c 01 SLOT | 0d 01 00 | 0e 01 00
+   | 14 03 ANI SPEED STAY                                    animation: 00 09 03 in the capture
+   | 11 0a 00 01 00 06 CODE FONT SIZE ROT INTERVAL(u16)     text style: 01 00 10 00, interval = panel width (0x40)
+   | 09 01 01 | 0c 01 SLOT | 0d 01 00 | 0e 01 00 | 12 07 01 00 00 00 c0 03 00 | 13 LEN DATA
+   | 18 06 02 SLOT 00 MODE COUNT(u16)                       show now: mode 0 = loop COUNT times, 1 = fixed time
+   | 35 19 SLOT KEY(20) TS(u32le)                           finish, same as images
+```
+
+- `1c 06` here has `time_sync` 0 (images use 3). Not understood.
+- `14 03`: animation type (`model_normal`, 0 here), speed (UI speed minus 1), stay time in seconds [code `ee`].
+- `11 0a`: play info `00 COUNT(u16)`, then item kind 6 (text; 9 for audio), then the font fields. ROT is 3 when the text is rotated 90 degrees [code `Q`].
+- `12 07`: one chunk, nominal size 960, same as images.
+- DATA = layout `03 00 PAGE | 03 01 LINE` (vertical and horizontal alignment, 0 top/left, 1 centre, 2 bottom/right; extra `03 02 1` for 270 degrees, `02 N` rotation, `04 00 N` line spacing, `04 01 N` letter spacing), then a colour block `00 FG(3) BG(3)`, a font block `01 CODE FONT SIZE`, then the text in GB encoding. ASCII is identical in GB.
+- Captured colours `ff ff ff 00 00 00` are white on black. The text ended in `0a`; whether the app appends it is unknown.
+- Only this one example exists. Colour, size, alignment, animation and speed values other than these are read from the code, not confirmed on the panel.
+- Clock, timing, temperature and sensor items reuse this frame with placeholder tokens in the text (`{hh}` becomes `06 02 03`, and so on) [code `Z`].
+
 ### 2.4 Clock
 
 - `ani_num` (template `dataTimeParse[0..3]`): types 0-3 with `fmt`, `fmt_data`, `h`, `m`, `s`, `score_r`, `score_b`. Byte layout not decoded (case 33 at ~1253331).
