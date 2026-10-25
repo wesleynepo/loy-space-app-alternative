@@ -1,26 +1,22 @@
 # LED panel control (YS524A250818, LOY SPACE protocol)
 
-Local web UI + Python BLE server for the 64x64 panel, as an alternative to the LOY SPACE app. Reverse-engineered from a PacketLogger capture and the app's own JS.
+Local web UI + Go BLE server for the 64x64 panel, as an alternative to the LOY SPACE app. Reverse-engineered from a PacketLogger capture and the app's own JS.
 
-## Run (Go)
+## Run
 ```
 go build -o led-panel . && ./led-panel      # http://127.0.0.1:8765 (localhost only); optional port argument
-go test ./...                              # checks the protocol byte-for-byte against the Python implementation
+go test ./...                              # checks frame building and the upload sequence against known-good vectors
 ```
-The Go port (`protocol.go`, `link.go`, `server.go`; BLE via tinygo.org/x/bluetooth) replaces `protocol.py` and `server.py`, serves the same API and serves `web/index.html` from disk (an embedded copy is the fallback). Run it from the project folder (or set `LED_PANEL_DIR`) so `.uploads/` and `.cache/` are shared.
+BLE goes through tinygo.org/x/bluetooth. `web/index.html` is served from disk (an embedded copy is the fallback). Run it from the project folder (or set `LED_PANEL_DIR`) so `.uploads/` and `.cache/` are shared.
 
-## Run (Python, original)
-```
-python3 -m venv .venv && .venv/bin/pip install bleak
-.venv/bin/python server.py          # http://127.0.0.1:8765 (localhost only)
-```
 Close LOY SPACE (and disconnect the phone) first: the panel accepts one BLE connection at a time. Click Connect in the page.
 
 ## Files
-- `server.py`: HTTP API + persistent BLE link; serves `web/index.html`.
-- `protocol.py`: frame build/parse, commands, image packing and upload frames.
+- `server.go`: HTTP API; serves `web/index.html`.
+- `link.go`: persistent BLE link, uploads, deletes, state reads.
+- `protocol.go`: frame build/parse, commands, image packing and upload frames.
+- `protocol_test.go`, `testdata_vectors.json`: protocol checks.
 - `web/index.html`: slot grid with pictures and usage count, upload, delete, power / rotation / brightness, traffic log.
-- `scan.py`, `gatt.py`, `probe.py` (read-only queries), `panel.py` (one-off command), `parse_pklg.py`, `rebuild.py`: investigation tools.
 - `NOTES-app-features.md`, `ROADMAP.md`: protocol notes, risk list, status.
 
 ## Notes

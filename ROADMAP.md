@@ -1,6 +1,6 @@
 # Roadmap
 
-Protocol sources: `NOTES-app-features.md` (static analysis of the app, includes the risk list) and `protocol.py` (verified against a real capture).
+Protocol sources: `NOTES-app-features.md` (static analysis of the app, includes the risk list) and `protocol.go` (verified against a real capture).
 Every feature below was checked on the real panel: Chrome DevTools drove the web UI, the Mac webcam (`ffmpeg -f avfoundation -i 0`) checked the display.
 
 ## Done and verified
@@ -24,5 +24,5 @@ Every feature below was checked on the real panel: Chrome DevTools drove the web
 Format/erase (`08 01 03`), clear all (`08 02 00 FF`), delete of slots 0-5, password set/open/close, firmware upgrade (group 04), screen-size set (`1B 05 01 ...`), device-id set (`0A 0A ...`).
 
 ## Rules used
-- Test uploads only went to slots 6+; slots 0-5 are never overwritten (enforced in `server.py`).
+- Test uploads only went to slots 6+; slots 0-5 are never overwritten (enforced in `server.go`).
 - Anything inferred rather than read from code was confirmed on the panel before a UI feature was built on it.
