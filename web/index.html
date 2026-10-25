@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LED Panel</title>
+<style>
+  :root { --bg:#f6f6f4; --fg:#1d1d1b; --card:#fff; --line:#dcdcd6; --accent:#0b6bcb; --bad:#b3261e; --ok:#1b7f3b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141413; --fg:#ecece8; --card:#1e1e1c; --line:#3a3a36; --accent:#5aa2f0; --bad:#f2837c; --ok:#6fcf8e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui, sans-serif; }
+  main { max-width:560px; margin:0 auto; display:grid; gap:16px; }
+  h1 { font-size:20px; margin:0; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; margin:0 0 12px; opacity:.7; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.45; cursor:default; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .slots { display:grid; grid-template-columns:repeat(auto-fill, minmax(112px, 1fr)); gap:10px; }
+  .slot { padding:8px; display:grid; gap:6px; justify-items:center; text-align:center; }
+  .slot img { width:96px; height:96px; image-rendering:pixelated; background:#000; border-radius:4px; }
+  .slot.cur { outline:2px solid var(--accent); }
+  .slot small { opacity:.7; }
+  .tag { font-size:11px; padding:1px 6px; border-radius:99px; border:1px solid var(--line); }
+  .tag.ok { color:var(--ok); border-color:var(--ok); } .tag.no { color:var(--bad); border-color:var(--bad); }
+  #state { font-weight:600; }
+  .on { color:var(--ok); } .off { color:var(--bad); }
+  input[type=range] { flex:1; min-width:160px; }
+  pre { margin:0; max-height:220px; overflow:auto; font:12px/1.4 ui-monospace, monospace; white-space:pre-wrap; word-break:break-all; }
+  #err { color:var(--bad); min-height:1.4em; }
+  #preview { width:128px; height:128px; image-rendering:pixelated; background:#000; border-radius:4px; }
+  #ustatus { opacity:.8; }
+</style>
+</head>
+<body>
+<main>
+  <h1>LED Panel</h1>
+  <section>
+    <h2>Connection</h2>
+    <div class="row">
+      <span id="state" class="off">disconnected</span>
+      <span id="info"></span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="connect" class="primary">Connect</button>
+      <button id="disconnect">Disconnect</button>
+    </div>
+    <div id="err"></div>
+  </section>
+  <section>
+    <h2>Slots <small id="usage" style="font-weight:normal;opacity:.7"></small></h2>
+    <div class="slots" id="slots"></div>
+    <div class="row" style="margin-top:12px"><button id="refresh">Refresh from panel</button></div>
+  </section>
+  <section>
+    <h2>Upload</h2>
+    <div class="row">
+      <input type="file" id="file" accept="image/*">
+    </div>
+    <div class="row" style="margin-top:12px">
+      <canvas id="preview" width="64" height="64"></canvas>
+      <button id="upload" class="primary" disabled>Upload to panel</button>
+      <span id="ustatus"></span>
+    </div>
+    <small style="opacity:.7">Cropped to a centred square and resized to 64×64. Goes to the first free slot (6–9); slots 0–5 are never overwritten.</small>
+  </section>
+  <section>
+    <h2>Display</h2>
+    <div class="row">
+      <button id="power" data-needs-conn="1" disabled>Screen: ?</button>
+      <label>Rotation
+        <select id="rotation" data-needs-conn="1" disabled>
+          <option value="0">0°</option><option value="90">90°</option>
+          <option value="180">180°</option><option value="270">270°</option>
+        </select>
+      </label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label for="bright">Brightness</label>
+      <input type="range" id="bright" min="1" max="7" value="7" disabled>
+      <span id="brightVal">7</span>
+    </div>
+    <small style="opacity:.7">Measured on this panel: levels above 7 look the same as 7.</small>
+  </section>
+  <section>
+    <h2>Traffic</h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let wasConnected = null;
+
+async function api(path, body) {
+  $('err').textContent = '';
+  const res = await fetch(path, body === undefined ? {} : {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  if (!res.ok) $('err').textContent = data.error || 'request failed';
+  render(data);
+  if (path !== '/api/brightness') loadSlots();
+  return data;
+}
+
+async function loadSlots() {
+  const data = await (await fetch('/api/slots')).json();
+  if (data.error) $('err').textContent = 'panel query failed: ' + data.error;
+  $('usage').textContent = data.used === null ? '' : `${data.used} of ${data.total} used, ${data.total - data.used} free`;
+  const box = $('slots');
+  box.replaceChildren();
+  for (const s of data.slots) {
+    const b = document.createElement('button');
+    b.className = 'slot' + (s.slot === data.current ? ' cur' : '');
+    b.dataset.needsConn = '1';
+    b.disabled = !wasConnected;
+    const img = Object.assign(document.createElement('img'), {src: s.src, alt: 'slot ' + s.slot});
+    const label = document.createElement('span');
+    label.textContent = 'Slot ' + s.slot;
+    const sub = document.createElement('small');
+    sub.textContent = s.type;
+    b.append(img, label, sub);
+    if (s.match !== null) {
+      const t = document.createElement('span');
+      t.className = 'tag ' + (s.match ? 'ok' : 'no');
+      t.textContent = s.match ? 'on panel' : 'differs';
+      b.append(t);
+    }
+    if (s.type === 'upload') {
+      const del = document.createElement('span');
+      del.className = 'tag no';
+      del.textContent = 'delete';
+      del.style.cursor = 'pointer';
+      del.onclick = e => {
+        e.stopPropagation();
+        if (wasConnected && confirm('Delete slot ' + s.slot + ' from the panel?')) api('/api/delete', {slot: s.slot});
+      };
+      b.append(del);
+    }
+    b.onclick = () => api('/api/image', {index: s.slot});
+    box.append(b);
+  }
+}
+
+function render(s) {
+  if (s.connected === undefined) return;
+  if (wasConnected !== null && s.connected !== wasConnected) { wasConnected = s.connected; loadSlots(); loadState(); }
+  wasConnected = s.connected; updateUpload();
+  $('state').textContent = s.connected ? 'connected' : 'disconnected';
+  $('state').className = s.connected ? 'on' : 'off';
+  $('info').textContent = s.info || '';
+  for (const el of document.querySelectorAll('[data-needs-conn]')) el.disabled = !s.connected;
+  $('bright').disabled = !s.connected;
+  $('connect').disabled = s.connected;
+  $('disconnect').disabled = !s.connected;
+  const log = $('log');
+  const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  log.textContent = (s.log || []).join('\n');
+  if (stick) log.scrollTop = log.scrollHeight;
+}
+
+$('refresh').onclick = loadSlots;
+$('connect').onclick = async () => { $('connect').disabled = true; $('connect').textContent = 'Connecting…';
+  await api('/api/connect', {}); $('connect').textContent = 'Connect'; };
+$('disconnect').onclick = () => api('/api/disconnect', {});
+let hasImage = false, uploading = false;
+const updateUpload = () => { $('upload').disabled = !(wasConnected && hasImage) || uploading; };
+
+$('file').onchange = async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height);   // centred square crop
+  const ctx = $('preview').getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 64, 64);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, 64, 64);
+  hasImage = true; $('ustatus').textContent = ''; updateUpload();
+};
+
+$('upload').onclick = async () => {
+  const px = $('preview').getContext('2d').getImageData(0, 0, 64, 64).data;   // RGBA, composited on black
+  let bin = '';
+  for (let i = 0; i < px.length; i += 4) bin += String.fromCharCode(px[i], px[i + 1], px[i + 2]);
+  uploading = true; updateUpload(); $('ustatus').textContent = 'Uploading…';
+  const t0 = performance.now();
+  const res = await api('/api/upload', {rgb: btoa(bin)});
+  uploading = false; updateUpload();
+  $('ustatus').textContent = $('err').textContent ? 'Failed'
+    : `Saved to slot ${res.slot} in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+};
+
+let screenOn = null;
+async function loadState() {
+  if (!wasConnected) return;
+  const res = await fetch('/api/state');
+  const s = await res.json();
+  if (!res.ok) { $('err').textContent = s.error || 'state query failed'; return; }
+  screenOn = s.power;
+  $('power').textContent = 'Screen: ' + (s.power ? 'on' : 'off');
+  $('rotation').value = String(s.rotation);
+  $('bright').value = Math.min(s.brightness, 7);
+  $('brightVal').textContent = s.brightness;
+}
+$('power').onclick = async () => { await api('/api/power', {on: !screenOn}); loadState(); };
+$('rotation').onchange = async e => { await api('/api/rotation', {degrees: +e.target.value}); loadState(); };
+$('bright').oninput = e => $('brightVal').textContent = e.target.value;
+$('bright').onchange = async e => { await api('/api/brightness', {level: +e.target.value}); loadState(); };
+
+setInterval(() => fetch('/api/status').then(r => r.json()).then(render).catch(() => {}), 2000);
+fetch('/api/status').then(r => r.json()).then(s => { render(s); loadSlots(); loadState(); });
+</script>
+</body>
+</html>
