@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/wesleynepo/led-panel/internal/server"
+	"github.com/wesleynepo/led-panel/internal/store"
 	"github.com/wesleynepo/led-panel/panel"
 )
 
@@ -29,8 +30,8 @@ func run() error {
 		_ = os.Chdir(d)
 	}
 
-	link := panel.New(".uploads")
-	app := server.New(link)
+	link := panel.New()
+	app := server.New(link, store.New(".uploads"))
 	srv := &http.Server{Addr: "127.0.0.1:" + port, Handler: app.Handler()}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

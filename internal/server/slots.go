@@ -1,10 +1,9 @@
 package server
 
 import (
+	"cmp"
 	"fmt"
-	"os"
-	"sort"
-	"strconv"
+	"slices"
 )
 
 type slotInfo struct {
@@ -15,24 +14,17 @@ type slotInfo struct {
 	Match *bool  `json:"match"`
 }
 
-func (s *Server) allSlots() []slotInfo {
-	var slots []slotInfo
-	uploads := s.link.Uploads().Load()
-	var nums []int
-	for k := range uploads {
-		if n, err := strconv.Atoi(k); err == nil {
-			nums = append(nums, n)
-		}
+func (s *Server) allSlots() ([]slotInfo, error) {
+	uploads, err := s.store.Entries()
+	if err != nil {
+		return nil, err
 	}
-	sort.Ints(nums)
-	for _, n := range nums {
-		slots = append(slots, slotInfo{Slot: n, Type: "upload", Key: uploads[strconv.Itoa(n)].Key})
+	slots := make([]slotInfo, 0, len(uploads))
+	for slot, e := range uploads {
+		slots = append(slots, slotInfo{Slot: int(slot), Type: "upload", Key: e.Key, Src: fmt.Sprintf("/img/%d?v=%d", slot, e.TS)})
 	}
-	for i := range slots {
-		k := slots[i].Key
-		slots[i].Src = fmt.Sprintf("/img/%d?k=%s", slots[i].Slot, k[max(0, len(k)-8):])
-	}
-	return slots
+	slices.SortFunc(slots, func(a, b slotInfo) int { return cmp.Compare(a.Slot, b.Slot) })
+	return slots, nil
 }
 
 func withPanelKeys(slots []slotInfo, keys map[int]string) []slotInfo {
@@ -48,11 +40,6 @@ func withPanelKeys(slots []slotInfo, keys map[int]string) []slotInfo {
 			slots = append(slots, slotInfo{Slot: n, Type: "unknown", Key: key, Match: &m})
 		}
 	}
-	sort.Slice(slots, func(i, j int) bool { return slots[i].Slot < slots[j].Slot })
+	slices.SortFunc(slots, func(a, b slotInfo) int { return cmp.Compare(a.Slot, b.Slot) })
 	return slots
-}
-
-func (s *Server) slotImage(slot int) ([]byte, string, error) {
-	b, err := os.ReadFile(s.link.Uploads().PreviewPath(slot))
-	return b, "image/png", err
 }
