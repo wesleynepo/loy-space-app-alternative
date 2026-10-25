@@ -23,6 +23,9 @@ const (
 	firstFreeSlot, lastSlot = 6, 9
 )
 
+// firstSeq is the first sequence number the link uses; the app's own frames sit below it (device info 41, show image 11).
+const firstSeq = 50
+
 var errNotConnected = errors.New("not connected")
 
 // PanelLink is one persistent BLE connection. Every panel exchange holds mu, so frames never interleave.
@@ -31,9 +34,8 @@ type PanelLink struct {
 	adapter *bluetooth.Adapter
 	device  bluetooth.Device
 	write   bluetooth.DeviceCharacteristic
-	up      bool
-	upFlag  atomic.Bool  // mirrors up without taking mu, so status polling never waits on an upload
-	infoVal atomic.Value // string
+	up      atomic.Bool // written under mu; readable without it so status polling never waits on an upload
+	infoVal atomic.Value
 	asm     Reassembler
 	replies chan Frame
 	seq     atomic.Uint32
@@ -44,7 +46,7 @@ type PanelLink struct {
 
 func newLink() *PanelLink {
 	l := &PanelLink{replies: make(chan Frame, 64)}
-	l.seq.Store(49) // first Next() is 50
+	l.seq.Store(firstSeq - 1)
 	return l
 }
 
@@ -79,19 +81,19 @@ func (l *PanelLink) onNotify(data []byte) {
 	}
 }
 
-func (l *PanelLink) Connected() bool { return l.upFlag.Load() }
+func (l *PanelLink) Connected() bool { return l.up.Load() }
 
 func (l *PanelLink) status() map[string]any {
 	l.logMu.Lock()
 	defer l.logMu.Unlock()
 	info, _ := l.infoVal.Load().(string)
-	return map[string]any{"connected": l.upFlag.Load(), "info": info, "log": append([]string{}, l.log...)}
+	return map[string]any{"connected": l.up.Load(), "info": info, "log": append([]string{}, l.log...)}
 }
 
 func (l *PanelLink) Connect() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.up {
+	if l.up.Load() {
 		return nil
 	}
 	if l.adapter == nil {
@@ -101,7 +103,6 @@ func (l *PanelLink) Connect() error {
 			return fmt.Errorf("bluetooth: %w", err)
 		}
 	}
-	// A panel still holding a stale link (e.g. after a killed server) is invisible for a few seconds.
 	var addr bluetooth.Address
 	found := false
 	for attempt := 1; attempt <= 3 && !found; attempt++ {
@@ -128,9 +129,8 @@ func (l *PanelLink) Connect() error {
 		dev.Disconnect()
 		return err
 	}
-	l.up = true
-	l.upFlag.Store(true)
-	reply, err := l.send(deviceInfo(41), 41) // the app's opening move
+	l.up.Store(true)
+	reply, err := l.send(deviceInfo(41), 41)
 	if err != nil {
 		l.dropLocked()
 		return err
@@ -178,15 +178,14 @@ func (l *PanelLink) attach(dev bluetooth.Device) error {
 }
 
 func (l *PanelLink) dropLocked() {
-	l.up = false
-	l.upFlag.Store(false)
+	l.up.Store(false)
 	l.device.Disconnect()
 }
 
 func (l *PanelLink) Disconnect() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.up {
+	if l.up.Load() {
 		l.dropLocked()
 	}
 	l.note("disconnected")
@@ -224,7 +223,7 @@ func (l *PanelLink) send(frame []byte, seq uint16) (Frame, error) {
 func (l *PanelLink) exchange(fn func() error) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if !l.up {
+	if !l.up.Load() {
 		return errNotConnected
 	}
 	return fn()

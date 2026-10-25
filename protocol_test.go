@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// testdata_vectors.json holds outputs of the original Python protocol.py for the same inputs.
 func TestMatchesPython(t *testing.T) {
 	raw, err := os.ReadFile("testdata_vectors.json")
 	if err != nil {

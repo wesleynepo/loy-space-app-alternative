@@ -27,12 +27,9 @@ import (
 	"time"
 )
 
-// embeddedHTML is the fallback when web/index.html isn't on disk (binary run away from the project folder).
-//
 //go:embed web/index.html
 var embeddedHTML []byte
 
-// indexHTML serves web/index.html from disk so edits show up on reload without a rebuild.
 func indexHTML() []byte {
 	if b, err := os.ReadFile(filepath.Join("web", "index.html")); err == nil {
 		return b
@@ -383,7 +380,6 @@ func main() {
 	if len(os.Args) > 1 {
 		port = os.Args[1]
 	}
-	// Relative dirs follow the executable's project folder when run from elsewhere via LED_PANEL_DIR.
 	if d := os.Getenv("LED_PANEL_DIR"); d != "" {
 		os.Chdir(d)
 	}
@@ -392,7 +388,7 @@ func main() {
 	mux.HandleFunc("POST /", handlePost)
 	srv := &http.Server{Addr: "127.0.0.1:" + port, Handler: mux}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM) // so `pkill` still releases the panel
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go func() {
 		<-ctx.Done()

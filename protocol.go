@@ -91,8 +91,6 @@ func (r *Reassembler) Feed(chunk []byte) [][]byte {
 	return out
 }
 
-// --- commands seen in the capture ---
-
 // deviceInfo is group 03, cmd 0a: the app's first command; the reply carries model, firmware and panel size.
 func deviceInfo(seq uint16) []byte {
 	return build(seq, []byte{0x03, 0x0a, 0x00, 0x1b, 0x00, 0x04, 0x00, 0x06, 0x00})
@@ -134,8 +132,6 @@ func setBrightness(seq uint16, level int) []byte {
 func deleteSlot(seq uint16, slot int) []byte {
 	return build(seq, []byte{0x02, 0x08, 0x02, 0x00, byte(slot)})
 }
-
-// --- image upload (group 02: start 08, item info, data chunks 09, finish 35) ---
 
 const (
 	chunkSize = 960
