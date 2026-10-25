@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/wesleynepo/loy-space-app-alternative/actions/workflows/ci.yml/badge.svg)](https://github.com/wesleynepo/loy-space-app-alternative/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/wesleynepo/loy-space-app-alternative/badges/coverage.json)](https://github.com/wesleynepo/loy-space-app-alternative/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/wesleynepo/led-panel)](https://goreportcard.com/report/github.com/wesleynepo/led-panel)
 [![Go version](https://img.shields.io/github/go-mod/go-version/wesleynepo/loy-space-app-alternative)](go.mod)
 
 Local web UI + Go BLE server for the 64x64 panel, as an alternative to the LOY SPACE app. Reverse-engineered from a PacketLogger capture and the app's own JS.
