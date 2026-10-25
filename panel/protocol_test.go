@@ -84,7 +84,7 @@ const capturedText = "aa55ffff9a001400c102080200000901010c01001c060000010000000d
 func TestTextMatchesCapture(t *testing.T) {
 	want, _ := hex.DecodeString(capturedText)
 	key, _ := hex.DecodeString("10000000609ffbd5bafa79c7422f5fe7da5e166d")
-	body, err := textBody(0, "Wesley Text\n", 0xffffff, 0, key, 0x6ade4936, 64, 64)
+	body, err := textBody(0, "Wesley Text", 0xffffff, 0, key, 0x6ade4936, 64, 64)
 	if err != nil {
 		t.Fatal(err)
 	}

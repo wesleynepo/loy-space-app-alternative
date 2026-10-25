@@ -40,7 +40,6 @@ type TextRequest struct {
 	BG   Color  `json:"bg"`
 }
 
-// preview draws a 64x64 RGB thumbnail of the text for the slot list. The panel draws the real thing itself.
 func (r TextRequest) preview() []byte {
 	img := image.NewRGBA(image.Rect(0, 0, 64, 64))
 	draw.Draw(img, img.Bounds(), image.NewUniform(color.RGBA{r.BG[0], r.BG[1], r.BG[2], 255}), image.Point{}, draw.Src)
@@ -55,8 +54,6 @@ func (r TextRequest) preview() []byte {
 }
 
 // Text programs (LOY SPACE "text" item), decoded from trace-2.pklg and the app's `Q`/`F`/`ie` builders.
-// The whole program fits one frame, so unlike an image there are no separate start/item/chunk frames:
-//
 //	02 | 08 02 00 slot | 09 01 01 | 0c 01 slot | 1c 06 00 00 01 00 00 00 | 0d 01 00 | 1d 09 0,0,w,h,0   start + region
 //	   | 09 01 01 | 0c 01 slot | 0d 01 00 | 0e 01 00
 //	   | 14 03 ani speed stay                                                                          animation
@@ -66,14 +63,16 @@ func (r TextRequest) preview() []byte {
 //	   | 35 19 slot key(20) ts(u32le)                                                                   finish
 //
 // data = 03 00 page | 03 01 line | 00 fg(3) bg(3) | 01 code font size | text bytes.
-// The captured text ended in 0a (a newline); whether the app adds it or the text box had one is unknown.
+// The captured text ended in 0a (a newline); whether the app adds it or the text box had one is unknown, so
+// textBody appends one, the one shape known to work.
 
 // textFrameMax is the app's single-frame limit (`b` = 960 + 37); longer programs are split into frames.
 const textFrameMax = 997
 
 const (
-	fontCode = 1  // `code` in the app's style defaults
-	fontSize = 16 // pixel height of the glyphs
+	aniType, aniSpeed, aniStay = 0, 9, 3 // as captured; speed is the UI speed minus 1
+	fontCode                   = 1       // `code` in the app's style defaults
+	fontSize                   = 16
 )
 
 // textBody returns the body of the one frame that uploads text to slot and shows it. fg and bg are 24-bit colours written
@@ -89,6 +88,7 @@ func textBody(slot int, text string, fg, bg uint32, key []byte, ts uint32, w, h 
 	}
 	s := byte(slot)
 	rgb := func(c uint32) []byte { return []byte{byte(c), byte(c >> 8), byte(c >> 16)} }
+	text += "\n"
 	data := cat(
 		[]byte{0x03, 0x00, 0x00, 0x03, 0x01, 0x00}, // page and line alignment: top, left
 		[]byte{0x00}, rgb(fg), rgb(bg),
@@ -101,7 +101,7 @@ func textBody(slot int, text string, fg, bg uint32, key []byte, ts uint32, w, h 
 		tlv(0x1C, 0, 0, 1, 0, 0, 0),
 		tlv(0x0D, 0), tlv(0x1D, append([]byte{0, 0, 0, 0}, append(u16(w, h), 0)...)...),
 		hdr, tlv(0x0E, 0),
-		tlv(0x14, 0, 9, 3), // animation type 0, speed 9, stays 3
+		tlv(0x14, aniType, aniSpeed, aniStay),
 		tlv(0x11, 0, 1, 0, 6, fontCode, 0, fontSize, 0, byte(w), byte(w>>8)),
 		hdr, tlv(0x0E, 0),
 		[]byte{0x12, 7}, u16(1, 0, chunkSize), []byte{0x00},

@@ -364,7 +364,7 @@ const updateUpload = () => {
   $('upload').disabled = !(wasConnected && hasImage) || uploading;
   $('sendText').disabled = !(wasConnected && /^[\x20-\x7e]+$/.test($('textIn').value)) || uploading;
 };
-const rgbOf = canvas => {   // base64 of the canvas as 64x64 RGB, composited on black
+const rgbOf = canvas => {
   const px = canvas.getContext('2d').getImageData(0, 0, 64, 64).data;
   let bin = '';
   for (let i = 0; i < px.length; i += 4) bin += String.fromCharCode(px[i], px[i + 1], px[i + 2]);

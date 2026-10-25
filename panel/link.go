@@ -318,37 +318,32 @@ func (l *Link) Upload(requested *int, rgb []byte) (int, error) {
 	}
 	ts := uint32(time.Now().Unix())
 	key := makeKey(slot+1, packed, ts)
-	var frames int
-	err = l.exchange(func() error {
-		bodies := uploadBodies(slot, packed, key, ts, 64, 64)
-		frames = len(bodies)
-		return l.sendAcked(bodies, slot)
-	})
-	if err != nil {
+	bodies := uploadBodies(slot, packed, key, ts, 64, 64)
+	if err := l.sendAcked(bodies, slot); err != nil {
 		return 0, err
 	}
-	l.Note("uploaded slot %d (%d frames)", slot, frames)
+	l.Note("uploaded slot %d (%d frames)", slot, len(bodies))
 	return slot, l.uploads.record(slot, rgb, hex.EncodeToString(key), int64(ts))
 }
 
-// sendAcked sends each body as its own frame, requires an ack for each, then shows the slot: the panel falls back
-// to slot 0 after an upload, so the app shows the new one. It must run inside exchange.
 func (l *Link) sendAcked(bodies [][]byte, slot int) error {
-	for i, body := range bodies {
-		seq := l.nextSeq()
-		r, err := l.send(build(seq, body), seq)
-		if err != nil {
-			return err
+	return l.exchange(func() error {
+		for i, body := range bodies {
+			seq := l.nextSeq()
+			r, err := l.send(build(seq, body), seq)
+			if err != nil {
+				return err
+			}
+			if string(r.Body) != string(ack) {
+				return fmt.Errorf("panel rejected frame %d/%d: %x", i+1, len(bodies), r.Body)
+			}
 		}
-		if string(r.Body) != string(ack) {
-			return fmt.Errorf("panel rejected frame %d/%d: %x", i+1, len(bodies), r.Body)
-		}
-	}
-	_, err := l.send(showImage(11, slot), 11)
-	return err
+		// The panel falls back to slot 0 after an upload, so the new slot is shown explicitly.
+		_, err := l.send(showImage(11, slot), 11)
+		return err
+	})
 }
 
-// UploadText sends a one-line ASCII text program to the requested slot, or the first free one, and returns the slot.
 func (l *Link) UploadText(req TextRequest) (int, error) {
 	if req.Text == "" {
 		return 0, errors.New("text is empty")
@@ -364,12 +359,11 @@ func (l *Link) UploadText(req TextRequest) (int, error) {
 	}
 	ts := uint32(time.Now().Unix())
 	key := makeKey(slot+1, []byte(req.Text), ts)
-	// The capture's text ended in a newline, so keep it: that is the one shape known to work.
-	body, err := textBody(slot, req.Text+"\n", colorInt(req.FG), colorInt(req.BG), key, ts, 64, 64)
+	body, err := textBody(slot, req.Text, colorInt(req.FG), colorInt(req.BG), key, ts, 64, 64)
 	if err != nil {
 		return 0, err
 	}
-	if err := l.exchange(func() error { return l.sendAcked([][]byte{body}, slot) }); err != nil {
+	if err := l.sendAcked([][]byte{body}, slot); err != nil {
 		return 0, err
 	}
 	l.Note("uploaded text to slot %d", slot)
