@@ -2,7 +2,14 @@
 
 Local web UI + Python BLE server for the 64x64 panel, as an alternative to the LOY SPACE app. Reverse-engineered from a PacketLogger capture and the app's own JS.
 
-## Run
+## Run (Go)
+```
+go build -o led-panel . && ./led-panel      # http://127.0.0.1:8765 (localhost only); optional port argument
+go test ./...                              # checks the protocol byte-for-byte against the Python implementation
+```
+The Go port (`protocol.go`, `link.go`, `server.go`; BLE via tinygo.org/x/bluetooth) replaces `protocol.py` and `server.py`, serves the same API and serves `web/index.html` from disk (an embedded copy is the fallback). Run it from the project folder (or set `LED_PANEL_DIR`) so `.uploads/` and `.cache/` are shared.
+
+## Run (Python, original)
 ```
 python3 -m venv .venv && .venv/bin/pip install bleak
 .venv/bin/python server.py          # http://127.0.0.1:8765 (localhost only)
