@@ -1,12 +1,9 @@
-package main
+package panel
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,9 +15,9 @@ import (
 const (
 	panelName  = "YS524A250818"
 	writeMax   = 180 // largest BLE write the app uses (MTU 185 minus overhead)
-	totalSlots = 60  // size of the panel's key table; the app refuses to send more programs than this
+	TotalSlots = 60  // size of the panel's key table; the app refuses to send more programs than this
 	// Slots 0-5 hold the app's content and are never overwritten.
-	firstFreeSlot, lastSlot = 6, 9
+	FirstFreeSlot, LastSlot = 6, 9
 )
 
 // firstSeq is the first sequence number the link uses; the app's own frames sit below it (device info 41, show image 11).
@@ -28,8 +25,8 @@ const firstSeq = 50
 
 var errNotConnected = errors.New("not connected")
 
-// PanelLink is one persistent BLE connection. Every panel exchange holds mu, so frames never interleave.
-type PanelLink struct {
+// Link is one persistent BLE connection. Every panel exchange holds mu, so frames never interleave.
+type Link struct {
 	mu      sync.Mutex // serializes panel traffic
 	adapter *bluetooth.Adapter
 	device  bluetooth.Device
@@ -40,19 +37,21 @@ type PanelLink struct {
 	replies chan Frame
 	seq     atomic.Uint32
 
+	uploads *Uploads
+
 	logMu sync.Mutex
 	log   []string
 }
 
-func newLink() *PanelLink {
-	l := &PanelLink{replies: make(chan Frame, 64)}
+func New(uploadsDir string) *Link {
+	l := &Link{replies: make(chan Frame, 64), uploads: &Uploads{dir: uploadsDir}}
 	l.seq.Store(firstSeq - 1)
 	return l
 }
 
-func (l *PanelLink) nextSeq() uint16 { return uint16(l.seq.Add(1)) }
+func (l *Link) nextSeq() uint16 { return uint16(l.seq.Add(1)) }
 
-func (l *PanelLink) note(format string, a ...any) {
+func (l *Link) Note(format string, a ...any) {
 	l.logMu.Lock()
 	defer l.logMu.Unlock()
 	l.log = append(l.log, time.Now().Format("15:04:05 ")+fmt.Sprintf(format, a...))
@@ -66,12 +65,12 @@ func short(b []byte) string {
 	return s[:min(len(s), 120)]
 }
 
-func (l *PanelLink) onNotify(data []byte) {
+func (l *Link) onNotify(data []byte) {
 	for _, raw := range l.asm.Feed(data) {
-		l.note("<- %s", short(raw))
+		l.Note("<- %s", short(raw))
 		f, err := parse(raw)
 		if err != nil {
-			l.note("bad frame: %v", err)
+			l.Note("bad frame: %v", err)
 			continue
 		}
 		select {
@@ -81,16 +80,16 @@ func (l *PanelLink) onNotify(data []byte) {
 	}
 }
 
-func (l *PanelLink) Connected() bool { return l.up.Load() }
+func (l *Link) Connected() bool { return l.up.Load() }
 
-func (l *PanelLink) status() map[string]any {
+func (l *Link) Status() map[string]any {
 	l.logMu.Lock()
 	defer l.logMu.Unlock()
 	info, _ := l.infoVal.Load().(string)
 	return map[string]any{"connected": l.up.Load(), "info": info, "log": append([]string{}, l.log...)}
 }
 
-func (l *PanelLink) Connect() error {
+func (l *Link) Connect() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.up.Load() {
@@ -115,7 +114,7 @@ func (l *PanelLink) Connect() error {
 		})
 		timer.Stop()
 		if !found {
-			l.note("panel not seen (attempt %d/3)", attempt)
+			l.Note("panel not seen (attempt %d/3)", attempt)
 		}
 	}
 	if !found {
@@ -144,11 +143,11 @@ func (l *PanelLink) Connect() error {
 		}, string(reply.Body[3:])), ",")
 		l.infoVal.Store(strings.Join(parts[:min(3, len(parts))], ", "))
 	}
-	l.note("connected")
+	l.Note("connected")
 	return nil
 }
 
-func (l *PanelLink) attach(dev bluetooth.Device) error {
+func (l *Link) attach(dev bluetooth.Device) error {
 	l.device = dev
 	services, err := dev.DiscoverServices(nil)
 	if err != nil {
@@ -177,27 +176,27 @@ func (l *PanelLink) attach(dev bluetooth.Device) error {
 	return nil
 }
 
-func (l *PanelLink) dropLocked() {
+func (l *Link) dropLocked() {
 	l.up.Store(false)
 	l.device.Disconnect()
 }
 
-func (l *PanelLink) Disconnect() error {
+func (l *Link) Disconnect() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.up.Load() {
 		l.dropLocked()
 	}
-	l.note("disconnected")
+	l.Note("disconnected")
 	return nil
 }
 
 // send writes one frame and waits for the reply with the same sequence number. Caller holds mu.
-func (l *PanelLink) send(frame []byte, seq uint16) (Frame, error) {
+func (l *Link) send(frame []byte, seq uint16) (Frame, error) {
 	for len(l.replies) > 0 {
 		<-l.replies
 	}
-	l.note("-> %s", short(frame))
+	l.Note("-> %s", short(frame))
 	for off := 0; off < len(frame); off += writeMax { // the app splits big frames into <=180-byte writes
 		if _, err := l.write.WriteWithoutResponse(frame[off:min(off+writeMax, len(frame))]); err != nil {
 			return Frame{}, err
@@ -220,7 +219,7 @@ func (l *PanelLink) send(frame []byte, seq uint16) (Frame, error) {
 }
 
 // exchange runs fn with the link locked and connected.
-func (l *PanelLink) exchange(fn func() error) error {
+func (l *Link) exchange(fn func() error) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !l.up.Load() {
@@ -229,12 +228,40 @@ func (l *PanelLink) exchange(fn func() error) error {
 	return fn()
 }
 
-func (l *PanelLink) Command(build func(seq uint16) []byte, seq uint16) error {
+func (l *Link) Uploads() *Uploads { return l.uploads }
+
+func (l *Link) command(build func(seq uint16) []byte, seq uint16) error {
 	return l.exchange(func() error { _, err := l.send(build(seq), seq); return err })
 }
 
+// ShowImage switches the panel to a stored picture.
+func (l *Link) ShowImage(index int) error {
+	if index < 0 || index >= TotalSlots {
+		return errors.New("index out of range")
+	}
+	return l.command(func(uint16) []byte { return showImage(11, index) }, 11) // the app always used seq 11
+}
+
+func (l *Link) SetPower(on bool) error {
+	return l.command(func(s uint16) []byte { return setPower(s, on) }, l.nextSeq())
+}
+
+func (l *Link) SetRotation(degrees int) error {
+	if degrees < 0 || degrees > 270 || degrees%90 != 0 {
+		return errors.New("degrees must be 0, 90, 180 or 270")
+	}
+	return l.command(func(s uint16) []byte { return setRotation(s, degrees/90) }, l.nextSeq())
+}
+
+func (l *Link) SetBrightness(level int) error {
+	if level < 1 || level > 15 {
+		return errors.New("level must be 1-15 (0 is avoided: the app maps it to 15)")
+	}
+	return l.command(func(s uint16) []byte { return setBrightness(s, level) }, l.nextSeq())
+}
+
 // ReadState reads power, brightness and rotation via read-only queries.
-func (l *PanelLink) ReadState() (map[string]any, error) {
+func (l *Link) ReadState() (map[string]any, error) {
 	var out [3]byte
 	err := l.exchange(func() error {
 		for i, cmd := range []byte{0x04, 0x06, 0x2F} {
@@ -255,11 +282,19 @@ func (l *PanelLink) ReadState() (map[string]any, error) {
 
 var ack = []byte{0x82, 0x00}
 
-// Upload sends a 64x64 RGB picture to a slot (start, item info, chunks, finish), one acked frame at a time.
-func (l *PanelLink) Upload(slot int, rgb []byte) (string, error) {
+// Upload sends a 64x64 RGB picture to the requested slot, or to the first slot the panel reports empty,
+// and returns the slot used. It sends start, item info, chunks and finish, one acked frame at a time.
+func (l *Link) Upload(requested *int, rgb []byte) (int, error) {
+	if len(rgb) != 64*64*3 {
+		return 0, errors.New("expected 64x64 RGB (12288 bytes)")
+	}
+	slot, err := l.pickSlot(requested)
+	if err != nil {
+		return 0, err
+	}
 	packed, err := packImage(rgb, 64, 64)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 	ts := uint32(time.Now().Unix())
 	key := makeKey(slot+1, packed, ts)
@@ -282,18 +317,38 @@ func (l *PanelLink) Upload(slot int, rgb []byte) (string, error) {
 		return err
 	})
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-	l.note("uploaded slot %d (%d frames)", slot, frames)
-	if err := savePreview(slot, rgb); err != nil {
-		return "", err
+	l.Note("uploaded slot %d (%d frames)", slot, frames)
+	return slot, l.uploads.record(slot, rgb, hex.EncodeToString(key), int64(ts))
+}
+
+func inSlotRange(slot int) bool { return FirstFreeSlot <= slot && slot <= LastSlot }
+
+func (l *Link) pickSlot(requested *int) (int, error) {
+	if requested != nil {
+		if !inSlotRange(*requested) {
+			return 0, fmt.Errorf("uploads go to slots %d-%d only", FirstFreeSlot, LastSlot)
+		}
+		return *requested, nil
 	}
-	k := hex.EncodeToString(key)
-	return k, updateIndex(func(ix map[string]uploadEntry) { ix[fmt.Sprint(slot)] = uploadEntry{k, int64(ts)} })
+	_, taken, err := l.PanelState()
+	if err != nil {
+		return 0, err
+	}
+	for s := FirstFreeSlot; s <= LastSlot; s++ {
+		if _, used := taken[s]; !used {
+			return s, nil
+		}
+	}
+	return 0, fmt.Errorf("slots %d-%d are all in use - delete one first", FirstFreeSlot, LastSlot)
 }
 
 // Delete removes one of our uploads from the panel and forgets its preview.
-func (l *PanelLink) Delete(slot int) error {
+func (l *Link) Delete(slot int) error {
+	if !inSlotRange(slot) {
+		return fmt.Errorf("deletes are limited to slots %d-%d", FirstFreeSlot, LastSlot)
+	}
 	err := l.exchange(func() error {
 		seq := l.nextSeq()
 		r, err := l.send(deleteSlot(seq, slot), seq)
@@ -305,13 +360,12 @@ func (l *PanelLink) Delete(slot int) error {
 	if err != nil {
 		return err
 	}
-	l.note("deleted slot %d", slot)
-	os.Remove(filepath.Join(uploadsDir, fmt.Sprintf("slot%d.png", slot)))
-	return updateIndex(func(ix map[string]uploadEntry) { delete(ix, fmt.Sprint(slot)) })
+	l.Note("deleted slot %d", slot)
+	return l.uploads.forget(slot)
 }
 
 // PanelState returns the current slot (03 36) and the key stored in each slot (03 35), as the app asks for them.
-func (l *PanelLink) PanelState() (int, map[int]string, error) {
+func (l *Link) PanelState() (int, map[int]string, error) {
 	var cur int
 	var lists [][]byte
 	err := l.exchange(func() error {
@@ -321,7 +375,7 @@ func (l *PanelLink) PanelState() (int, map[int]string, error) {
 			return err
 		}
 		cur = int(r.Body[4])
-		for first := 0; first < totalSlots; first += 10 { // the app reads the table ten slots at a time
+		for first := 0; first < TotalSlots; first += 10 { // the app reads the table ten slots at a time
 			seq := l.nextSeq()
 			body := []byte{0x03, 0x35, 0x0A}
 			for i := 0; i < 10; i++ {
@@ -347,28 +401,4 @@ func (l *PanelLink) PanelState() (int, map[int]string, error) {
 		}
 	}
 	return cur, keys, nil
-}
-
-type uploadEntry struct {
-	Key string `json:"key"`
-	TS  int64  `json:"ts"`
-}
-
-var indexMu sync.Mutex
-
-func loadUploads() map[string]uploadEntry {
-	ix := map[string]uploadEntry{}
-	if b, err := os.ReadFile(filepath.Join(uploadsDir, "index.json")); err == nil {
-		json.Unmarshal(b, &ix)
-	}
-	return ix
-}
-
-func updateIndex(fn func(map[string]uploadEntry)) error {
-	indexMu.Lock()
-	defer indexMu.Unlock()
-	ix := loadUploads()
-	fn(ix)
-	b, _ := json.Marshal(ix)
-	return os.WriteFile(filepath.Join(uploadsDir, "index.json"), b, 0o644)
 }

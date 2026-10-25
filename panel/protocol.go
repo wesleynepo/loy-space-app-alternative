@@ -7,7 +7,7 @@
 //	dir = 0xc1 app->panel, 0x81 panel->app
 //
 // App bodies start with (group, cmd), e.g. 02 06 02 00 09. Replies echo the sequence number.
-package main
+package panel
 
 import (
 	"bytes"

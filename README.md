@@ -4,7 +4,8 @@ Local web UI + Go BLE server for the 64x64 panel, as an alternative to the LOY S
 
 ## Run
 ```
-go build -o led-panel . && ./led-panel      # http://127.0.0.1:8765 (localhost only); optional port argument
+make run                                   # or: make build && ./led-panel; PORT=9000 make run
+# http://127.0.0.1:8765 (localhost only); optional port argument
 go test ./...                              # checks frame building and the upload sequence against known-good vectors
 ```
 BLE goes through tinygo.org/x/bluetooth. `web/index.html` is served from disk (an embedded copy is the fallback). Run it from the project folder (or set `LED_PANEL_DIR`) so `.uploads/` and `.cache/` are shared.
@@ -12,10 +13,12 @@ BLE goes through tinygo.org/x/bluetooth. `web/index.html` is served from disk (a
 Close LOY SPACE (and disconnect the phone) first: the panel accepts one BLE connection at a time. Click Connect in the page.
 
 ## Files
-- `server.go`: HTTP API; serves `web/index.html`.
-- `link.go`: persistent BLE link, uploads, deletes, state reads.
-- `protocol.go`: frame build/parse, commands, image packing and upload frames.
-- `protocol_test.go`, `testdata_vectors.json`: protocol checks.
+- `Makefile`: `run`, `build`, `test`, `vet`, `clean`.
+- `cmd/server/main.go`: wiring only (port, folders, graceful shutdown).
+- `internal/server/`: HTTP layer. API handlers, the LOY SPACE slot list and picture cache. Knows nothing about BLE frames.
+- `panel/`: panel control, no HTTP. `link.go` is the BLE link (uploads, deletes, state, validated commands), `uploads.go` the on-disk record of our uploads, `protocol.go` frame build/parse and image packing.
+- `panel/protocol_test.go`, `panel/testdata_vectors.json`: protocol checks.
+- `web/`: `index.html` and the embedded copy.
 - `web/index.html`: slot grid with pictures and usage count, upload, delete, power / rotation / brightness, traffic log.
 - `NOTES-app-features.md`, `ROADMAP.md`: protocol notes, risk list, status.
 

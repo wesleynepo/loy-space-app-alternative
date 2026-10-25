@@ -5,3 +5,4 @@ __pycache__/
 # BLE captures include the host's Bluetooth address and the panel's identifiers
 *.pklg
 /led-panel
+/.verify/
