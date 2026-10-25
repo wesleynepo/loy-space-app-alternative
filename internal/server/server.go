@@ -18,18 +18,11 @@ import (
 	"github.com/wesleynepo/led-panel/web"
 )
 
-type Config struct {
-	CacheDir string
-	// AppDoc is the LOY SPACE app's folder (iOS app on Apple silicon) with its per-panel slot list and local images.
-	AppDoc string
-}
-
 type Server struct {
 	link *panel.Link
-	cfg  Config
 }
 
-func New(link *panel.Link, cfg Config) *Server { return &Server{link: link, cfg: cfg} }
+func New(link *panel.Link) *Server { return &Server{link: link} }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
