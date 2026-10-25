@@ -77,3 +77,40 @@ func TestParseAndReassemble(t *testing.T) {
 		t.Fatal("bad checksum accepted")
 	}
 }
+
+// capturedText is the frame the app sent for the text "Wesley Text\n" (white on black, slot 0, 64x64 panel).
+const capturedText = "aa55ffff9a001400c102080200000901010c01001c060000010000000d01001d090000000040004000000901010c01000d01000e01001403000903110a000100060100100040000901010c01000d01000e0100120701000000c00300131d03000003010000ffffff000000010100105765736c657920546578740a180602000000010035190010000000609ffbd5bafa79c7422f5fe7da5e166d3649de6a4d1a"
+
+func TestTextMatchesCapture(t *testing.T) {
+	want, _ := hex.DecodeString(capturedText)
+	key, _ := hex.DecodeString("10000000609ffbd5bafa79c7422f5fe7da5e166d")
+	body, err := textBody(0, "Wesley Text", 0xffffff, 0, key, 0x6ade4936, 64, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := build(0x14, body); !bytes.Equal(got, want) {
+		t.Errorf("got  %x\nwant %x", got, want)
+	}
+	if _, err := textBody(0, "caf\u00e9", 0xffffff, 0, key, 0, 64, 64); err == nil {
+		t.Error("non-ASCII accepted")
+	}
+}
+
+func TestTextRequestJSONAndPreview(t *testing.T) {
+	var r TextRequest
+	if err := json.Unmarshal([]byte(`{"text":"Hi","fg":"#ff0000","bg":"#000010"}`), &r); err != nil {
+		t.Fatal(err)
+	}
+	if r.FG != (Color{255, 0, 0}) || r.BG != (Color{0, 0, 16}) {
+		t.Fatalf("colours %v %v", r.FG, r.BG)
+	}
+	for _, bad := range []string{`{"fg":"ff0000"}`, `{"fg":"#ff00"}`, `{"fg":"#zzzzzz"}`} {
+		if json.Unmarshal([]byte(bad), &r) == nil {
+			t.Errorf("%s accepted", bad)
+		}
+	}
+	p := r.preview()
+	if len(p) != 64*64*3 || !bytes.Equal(p[:3], []byte{0, 0, 16}) || !bytes.Contains(p, []byte{255, 0, 0}) {
+		t.Error("preview should be the background with red text on it")
+	}
+}

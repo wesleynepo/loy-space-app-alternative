@@ -17,8 +17,10 @@ Every feature below was checked on the real panel: Chrome DevTools drove the web
 - **Mirror** (`02 3a 01 V`): panel acks it but nothing visibly changes, so it is not exposed.
 
 ## Not done
-- **Clock styles** (`ani_num`), **schedules/playlist** (`27 00`, `26 ...`), **text programs**, **GIF upload** (multi-page `YSTP01`): byte layouts not decoded (see gaps in `NOTES-app-features.md`). The capture has no examples; the next step would be a second capture of the app doing each one.
+- **Clock styles** (`ani_num`), **schedules/playlist** (`27 00`, `26 ...`), **GIF upload** (multi-page `YSTP01`): byte layouts not decoded (see gaps in `NOTES-app-features.md`). The capture has no examples; the next step would be a second capture of the app doing each one.
 - **Delete a slot**: no safe-to-expose command was verified. Slots 6+ can be overwritten by uploading again.
+
+- **Text programs**: layout decoded from `trace-2.pklg` and reproduced byte for byte by `textBody` (`panel/text.go`, `TestTextMatchesCapture`; see `NOTES-app-features.md` 2.3b). Not sent to the real panel yet, so no UI. Next: send it to slot 6+ and check with the webcam; a second capture with other colours, sizes and animations would confirm the style fields.
 
 ## Never implemented (NOTES-app-features.md section 3)
 Format/erase (`08 01 03`), clear all (`08 02 00 FF`), delete of slots 0-5, password set/open/close, firmware upgrade (group 04), screen-size set (`1B 05 01 ...`), device-id set (`0A 0A ...`).

@@ -141,12 +141,15 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.link.Status())
 	}
 	var args struct {
-		Index   *int   `json:"index"`
-		Slot    *int   `json:"slot"`
-		RGB     string `json:"rgb"`
-		On      bool   `json:"on"`
-		Degrees *int   `json:"degrees"`
-		Level   *int   `json:"level"`
+		Index   *int        `json:"index"`
+		Slot    *int        `json:"slot"`
+		RGB     string      `json:"rgb"`
+		Text    string      `json:"text"`
+		FG      panel.Color `json:"fg"`
+		BG      panel.Color `json:"bg"`
+		On      bool        `json:"on"`
+		Degrees *int        `json:"degrees"`
+		Level   *int        `json:"level"`
 	}
 	if body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20)); len(bytes.TrimSpace(body)) > 0 {
 		if err := json.Unmarshal(body, &args); err != nil {
@@ -178,6 +181,15 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		slot, err := s.link.Upload(args.Slot, rgb)
+		if err != nil {
+			reply(err)
+			return
+		}
+		resp := s.link.Status()
+		resp["slot"] = slot
+		writeJSON(w, 200, resp)
+	case "/api/upload-text":
+		slot, err := s.link.UploadText(panel.TextRequest{Slot: args.Slot, Text: args.Text, FG: args.FG, BG: args.BG})
 		if err != nil {
 			reply(err)
 			return

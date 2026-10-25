@@ -318,10 +318,16 @@ func (l *Link) Upload(requested *int, rgb []byte) (int, error) {
 	}
 	ts := uint32(time.Now().Unix())
 	key := makeKey(slot+1, packed, ts)
-	var frames int
-	err = l.exchange(func() error {
-		bodies := uploadBodies(slot, packed, key, ts, 64, 64)
-		frames = len(bodies)
+	bodies := uploadBodies(slot, packed, key, ts, 64, 64)
+	if err := l.sendAcked(bodies, slot); err != nil {
+		return 0, err
+	}
+	l.Note("uploaded slot %d (%d frames)", slot, len(bodies))
+	return slot, l.uploads.record(slot, rgb, hex.EncodeToString(key), int64(ts))
+}
+
+func (l *Link) sendAcked(bodies [][]byte, slot int) error {
+	return l.exchange(func() error {
 		for i, body := range bodies {
 			seq := l.nextSeq()
 			r, err := l.send(build(seq, body), seq)
@@ -332,16 +338,41 @@ func (l *Link) Upload(requested *int, rgb []byte) (int, error) {
 				return fmt.Errorf("panel rejected frame %d/%d: %x", i+1, len(bodies), r.Body)
 			}
 		}
-		// The panel falls back to slot 0 after an upload; show the new slot, as the app does.
+		// The panel falls back to slot 0 after an upload, so the new slot is shown explicitly.
 		_, err := l.send(showImage(11, slot), 11)
 		return err
 	})
+}
+
+func (l *Link) UploadText(req TextRequest) (int, error) {
+	if req.Text == "" {
+		return 0, errors.New("text is empty")
+	}
+	for _, r := range req.Text {
+		if r < 0x20 || r > 0x7e {
+			return 0, errors.New("text must be printable ASCII")
+		}
+	}
+	slot, err := l.pickSlot(req.Slot)
 	if err != nil {
 		return 0, err
 	}
-	l.Note("uploaded slot %d (%d frames)", slot, frames)
-	return slot, l.uploads.record(slot, rgb, hex.EncodeToString(key), int64(ts))
+	ts := uint32(time.Now().Unix())
+	key := makeKey(slot+1, []byte(req.Text), ts)
+	body, err := textBody(slot, req.Text, colorInt(req.FG), colorInt(req.BG), key, ts, 64, 64)
+	if err != nil {
+		return 0, err
+	}
+	if err := l.sendAcked([][]byte{body}, slot); err != nil {
+		return 0, err
+	}
+	l.Note("uploaded text to slot %d", slot)
+	return slot, l.uploads.record(slot, req.preview(), hex.EncodeToString(key), int64(ts))
 }
+
+// colorInt is how the app writes a colour: three bytes R, G, B, which textBody writes little-endian. [inferred: the
+// capture's white and black cannot tell RGB from BGR]
+func colorInt(c Color) uint32 { return uint32(c[0]) | uint32(c[1])<<8 | uint32(c[2])<<16 }
 
 func inSlotRange(slot int) bool { return FirstFreeSlot <= slot && slot <= LastSlot }
 
