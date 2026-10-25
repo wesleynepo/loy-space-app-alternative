@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -144,6 +145,9 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		Index   *int   `json:"index"`
 		Slot    *int   `json:"slot"`
 		RGB     string `json:"rgb"`
+		Text    string `json:"text"`
+		FG      string `json:"fg"`
+		BG      string `json:"bg"`
 		On      bool   `json:"on"`
 		Degrees *int   `json:"degrees"`
 		Level   *int   `json:"level"`
@@ -185,6 +189,26 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 		resp := s.link.Status()
 		resp["slot"] = slot
 		writeJSON(w, 200, resp)
+	case "/api/upload-text":
+		preview, err := base64.StdEncoding.DecodeString(args.RGB)
+		var fg, bg [3]byte
+		if err == nil {
+			fg, err = parseColor(args.FG)
+		}
+		if err == nil {
+			bg, err = parseColor(args.BG)
+		}
+		var slot int
+		if err == nil {
+			slot, err = s.link.UploadText(args.Slot, args.Text, fg, bg, preview)
+		}
+		if err != nil {
+			reply(err)
+			return
+		}
+		resp := s.link.Status()
+		resp["slot"] = slot
+		writeJSON(w, 200, resp)
 	case "/api/delete":
 		slot, err := need(args.Slot, "slot")
 		if err == nil {
@@ -208,4 +232,14 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	default:
 		fail(w, 404, errors.New("not found"))
 	}
+}
+
+// parseColor reads "#rrggbb".
+func parseColor(s string) (c [3]byte, err error) {
+	b, err := hex.DecodeString(strings.TrimPrefix(s, "#"))
+	if err != nil || len(b) != 3 || !strings.HasPrefix(s, "#") {
+		return c, fmt.Errorf("bad colour %q, want #rrggbb", s)
+	}
+	copy(c[:], b)
+	return c, nil
 }

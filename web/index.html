@@ -119,6 +119,10 @@
   .result { flex-wrap:nowrap; align-items:flex-start; }
   .result .hint { margin:0; }
   #preview { width:96px; height:96px; image-rendering:pixelated; background:#000; border-radius:8px; flex:none; }
+  #textIn { font:inherit; height:48px; padding:0 16px; border-radius:8px; border:1px solid var(--outline); background:var(--surface-container);
+    color:var(--on-surface); width:100%; }
+  #textIn:focus-visible { outline:2px solid var(--primary); outline-offset:1px; }
+  input[type=color] { width:40px; height:40px; padding:0; border:1px solid var(--outline); border-radius:8px; background:none; cursor:pointer; }
   .actions { display:flex; justify-content:flex-end; gap:8px; }
 
   /* display controls */
@@ -181,6 +185,9 @@
       <button id="openUpload" class="primary">
         <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M440-440H200v-80h240v-240h80v240h240v80H520v240h-80v-240Z"/></svg>
         Upload image</button>
+      <button id="openText" class="primary">
+        <svg viewBox="0 -960 960 960" aria-hidden="true"><path d="M420-160v-520H200v-120h560v120H540v520H420Z"/></svg>
+        Add text</button>
       <span id="ustatus"></span>
     </div>
   </section>
@@ -233,6 +240,22 @@
   <div class="actions">
     <button id="cancelUpload" class="outlined">Cancel</button>
     <button id="upload" class="primary" disabled>Upload to panel</button>
+  </div>
+</dialog>
+<dialog id="textDialog" aria-labelledby="textTitle">
+  <h2 id="textTitle">Add text</h2>
+  <input id="textIn" type="text" maxlength="100" placeholder="Text to show" autocomplete="off" spellcheck="false">
+  <div class="row">
+    <label>Text colour <input type="color" id="fgIn" value="#ffffff"></label>
+    <label>Background <input type="color" id="bgIn" value="#000000"></label>
+  </div>
+  <div class="row result">
+    <canvas id="textPreview" width="64" height="64"></canvas>
+    <small class="hint">Printable ASCII only. The panel draws the text itself (16 px font), so this preview is only approximate. It goes to the first free slot (6–9); slots 0–5 are never overwritten.</small>
+  </div>
+  <div class="actions">
+    <button id="cancelText" class="outlined">Cancel</button>
+    <button id="sendText" class="primary" disabled>Send to panel</button>
   </div>
 </dialog>
 <div id="err" role="alert" popover="manual"></div>
@@ -337,7 +360,16 @@ $('refresh').onclick = loadSlots;
 $('connect').onclick = async () => { $('connect').disabled = true; $('connect').textContent = 'Connecting…'; await api('/api/connect', {}); };
 $('disconnect').onclick = () => api('/api/disconnect', {});
 let hasImage = false, uploading = false;
-const updateUpload = () => { $('upload').disabled = !(wasConnected && hasImage) || uploading; };
+const updateUpload = () => {
+  $('upload').disabled = !(wasConnected && hasImage) || uploading;
+  $('sendText').disabled = !(wasConnected && /^[\x20-\x7e]+$/.test($('textIn').value)) || uploading;
+};
+const rgbOf = canvas => {   // base64 of the canvas as 64x64 RGB, composited on black
+  const px = canvas.getContext('2d').getImageData(0, 0, 64, 64).data;
+  let bin = '';
+  for (let i = 0; i < px.length; i += 4) bin += String.fromCharCode(px[i], px[i + 1], px[i + 2]);
+  return btoa(bin);
+};
 
 const dlg = $('uploadDialog');
 const MIN_SIDE = 16;                       // smallest selectable source square, in image pixels
@@ -409,16 +441,34 @@ drag($('handle'), (m, o, st) => {          // the opposite corner stays put
 });
 
 $('upload').onclick = async () => {
-  const px = $('preview').getContext('2d').getImageData(0, 0, 64, 64).data;   // RGBA, composited on black
-  let bin = '';
-  for (let i = 0; i < px.length; i += 4) bin += String.fromCharCode(px[i], px[i + 1], px[i + 2]);
   uploading = true; updateUpload(); $('cancelUpload').disabled = true; $('upload').textContent = 'Uploading…';
   const t0 = performance.now();
-  const res = await api('/api/upload', {rgb: btoa(bin)});
+  const res = await api('/api/upload', {rgb: rgbOf($('preview'))});
   uploading = false; $('cancelUpload').disabled = false; $('upload').textContent = 'Upload to panel'; updateUpload();
   if ($('err').textContent) { $('ustatus').textContent = 'Failed'; return; }
   $('ustatus').textContent = `Saved to slot ${res.slot} in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
   dlg.close();
+};
+
+const tdlg = $('textDialog');
+function drawTextPreview() {
+  const ctx = $('textPreview').getContext('2d');
+  ctx.fillStyle = $('bgIn').value; ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = $('fgIn').value; ctx.font = '16px monospace'; ctx.textBaseline = 'top';
+  ctx.fillText($('textIn').value, 0, 0);
+  updateUpload();
+}
+for (const id of ['textIn', 'fgIn', 'bgIn']) $(id).oninput = drawTextPreview;
+$('openText').onclick = () => { drawTextPreview(); tdlg.showModal(); $('textIn').focus(); };
+$('cancelText').onclick = () => tdlg.close();
+tdlg.addEventListener('cancel', e => { if (uploading) e.preventDefault(); });
+$('sendText').onclick = async () => {
+  uploading = true; updateUpload(); $('cancelText').disabled = true; $('sendText').textContent = 'Sending…';
+  const res = await api('/api/upload-text', {text: $('textIn').value, fg: $('fgIn').value, bg: $('bgIn').value, rgb: rgbOf($('textPreview'))});
+  uploading = false; $('cancelText').disabled = false; $('sendText').textContent = 'Send to panel'; updateUpload();
+  if ($('err').textContent) { $('ustatus').textContent = 'Failed'; return; }
+  $('ustatus').textContent = `Saved text to slot ${res.slot}`;
+  tdlg.close();
 };
 
 let screenOn = null;

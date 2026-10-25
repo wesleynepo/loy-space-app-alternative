@@ -322,19 +322,7 @@ func (l *Link) Upload(requested *int, rgb []byte) (int, error) {
 	err = l.exchange(func() error {
 		bodies := uploadBodies(slot, packed, key, ts, 64, 64)
 		frames = len(bodies)
-		for i, body := range bodies {
-			seq := l.nextSeq()
-			r, err := l.send(build(seq, body), seq)
-			if err != nil {
-				return err
-			}
-			if string(r.Body) != string(ack) {
-				return fmt.Errorf("panel rejected frame %d/%d: %x", i+1, len(bodies), r.Body)
-			}
-		}
-		// The panel falls back to slot 0 after an upload; show the new slot, as the app does.
-		_, err := l.send(showImage(11, slot), 11)
-		return err
+		return l.sendAcked(bodies, slot)
 	})
 	if err != nil {
 		return 0, err
@@ -342,6 +330,59 @@ func (l *Link) Upload(requested *int, rgb []byte) (int, error) {
 	l.Note("uploaded slot %d (%d frames)", slot, frames)
 	return slot, l.uploads.record(slot, rgb, hex.EncodeToString(key), int64(ts))
 }
+
+// sendAcked sends each body as its own frame, requires an ack for each, then shows the slot: the panel falls back
+// to slot 0 after an upload, so the app shows the new one. It must run inside exchange.
+func (l *Link) sendAcked(bodies [][]byte, slot int) error {
+	for i, body := range bodies {
+		seq := l.nextSeq()
+		r, err := l.send(build(seq, body), seq)
+		if err != nil {
+			return err
+		}
+		if string(r.Body) != string(ack) {
+			return fmt.Errorf("panel rejected frame %d/%d: %x", i+1, len(bodies), r.Body)
+		}
+	}
+	_, err := l.send(showImage(11, slot), 11)
+	return err
+}
+
+// UploadText sends a one-line ASCII text program to the requested slot, or the first free one, and returns the slot.
+// fg and bg are RGB. preview is the 64x64 RGB picture kept for the slot list; the panel draws the text itself.
+func (l *Link) UploadText(requested *int, text string, fg, bg [3]byte, preview []byte) (int, error) {
+	if len(preview) != 64*64*3 {
+		return 0, errors.New("expected a 64x64 RGB preview (12288 bytes)")
+	}
+	if text == "" {
+		return 0, errors.New("text is empty")
+	}
+	for _, r := range text {
+		if r < 0x20 || r > 0x7e {
+			return 0, errors.New("text must be printable ASCII")
+		}
+	}
+	slot, err := l.pickSlot(requested)
+	if err != nil {
+		return 0, err
+	}
+	ts := uint32(time.Now().Unix())
+	key := makeKey(slot+1, []byte(text), ts)
+	// The capture's text ended in a newline, so keep it: that is the one shape known to work.
+	body, err := textBody(slot, text+"\n", colorInt(fg), colorInt(bg), key, ts, 64, 64)
+	if err != nil {
+		return 0, err
+	}
+	if err := l.exchange(func() error { return l.sendAcked([][]byte{body}, slot) }); err != nil {
+		return 0, err
+	}
+	l.Note("uploaded text to slot %d", slot)
+	return slot, l.uploads.record(slot, preview, hex.EncodeToString(key), int64(ts))
+}
+
+// colorInt is how the app writes a colour: three bytes R, G, B, which textBody writes little-endian. [inferred: the
+// capture's white and black cannot tell RGB from BGR]
+func colorInt(c [3]byte) uint32 { return uint32(c[0]) | uint32(c[1])<<8 | uint32(c[2])<<16 }
 
 func inSlotRange(slot int) bool { return FirstFreeSlot <= slot && slot <= LastSlot }
 
