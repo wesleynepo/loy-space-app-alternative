@@ -41,14 +41,12 @@ type Link struct {
 	replies chan Frame
 	seq     atomic.Uint32
 
-	uploads *Uploads
-
 	logMu sync.Mutex
 	log   []string
 }
 
-func New(uploadsDir string) *Link {
-	l := &Link{replies: make(chan Frame, 64), uploads: &Uploads{dir: uploadsDir}}
+func New() *Link {
+	l := &Link{replies: make(chan Frame, 64)}
 	l.seq.Store(firstSeq - 1)
 	return l
 }
@@ -247,8 +245,6 @@ func (l *Link) exchange(fn func() error) error {
 	return fn()
 }
 
-func (l *Link) Uploads() *Uploads { return l.uploads }
-
 func (l *Link) command(build func(seq uint16) []byte, seq uint16) error {
 	return l.exchange(func() error { _, err := l.send(build(seq), seq); return err })
 }
@@ -302,26 +298,34 @@ func (l *Link) ReadState() (map[string]any, error) {
 
 var ack = []byte{0x82, 0x00}
 
-func (l *Link) Upload(requested *int, rgb []byte) (int, error) {
+// Uploaded is what the panel now holds in a slot. RGB is the 64x64 picture that was sent.
+type Uploaded struct {
+	Slot int
+	Key  string
+	TS   int64
+	RGB  []byte
+}
+
+func (l *Link) Upload(requested *int, rgb []byte) (Uploaded, error) {
 	if len(rgb) != 64*64*3 {
-		return 0, errors.New("expected 64x64 RGB (12288 bytes)")
+		return Uploaded{}, errors.New("expected 64x64 RGB (12288 bytes)")
 	}
 	slot, err := l.pickSlot(requested)
 	if err != nil {
-		return 0, err
+		return Uploaded{}, err
 	}
 	packed, err := packImage(rgb, 64, 64)
 	if err != nil {
-		return 0, err
+		return Uploaded{}, err
 	}
 	ts := uint32(time.Now().Unix())
 	key := makeKey(slot+1, packed, ts)
 	bodies := uploadBodies(slot, packed, key, ts, 64, 64)
 	if err := l.sendAcked(bodies, slot); err != nil {
-		return 0, err
+		return Uploaded{}, err
 	}
 	l.Note("uploaded slot %d (%d frames)", slot, len(bodies))
-	return slot, l.uploads.record(slot, rgb, hex.EncodeToString(key), int64(ts))
+	return Uploaded{Slot: slot, Key: hex.EncodeToString(key), TS: int64(ts), RGB: rgb}, nil
 }
 
 func (l *Link) sendAcked(bodies [][]byte, slot int) error {
@@ -342,30 +346,30 @@ func (l *Link) sendAcked(bodies [][]byte, slot int) error {
 	})
 }
 
-func (l *Link) UploadText(req TextRequest) (int, error) {
+func (l *Link) UploadText(req TextRequest) (Uploaded, error) {
 	if req.Text == "" {
-		return 0, errors.New("text is empty")
+		return Uploaded{}, errors.New("text is empty")
 	}
 	for _, r := range req.Text {
 		if r < 0x20 || r > 0x7e {
-			return 0, errors.New("text must be printable ASCII")
+			return Uploaded{}, errors.New("text must be printable ASCII")
 		}
 	}
 	slot, err := l.pickSlot(req.Slot)
 	if err != nil {
-		return 0, err
+		return Uploaded{}, err
 	}
 	ts := uint32(time.Now().Unix())
 	key := makeKey(slot+1, []byte(req.Text), ts)
 	body, err := textBody(slot, req.Text, colorInt(req.FG), colorInt(req.BG), key, ts, 64, 64)
 	if err != nil {
-		return 0, err
+		return Uploaded{}, err
 	}
 	if err := l.sendAcked([][]byte{body}, slot); err != nil {
-		return 0, err
+		return Uploaded{}, err
 	}
 	l.Note("uploaded text to slot %d", slot)
-	return slot, l.uploads.record(slot, req.preview(), hex.EncodeToString(key), int64(ts))
+	return Uploaded{Slot: slot, Key: hex.EncodeToString(key), TS: int64(ts), RGB: req.preview()}, nil
 }
 
 // colorInt is how the app writes a colour: three bytes R, G, B, which textBody writes little-endian. [inferred: the
@@ -405,11 +409,10 @@ func (l *Link) Delete(slot int) error {
 		}
 		return err
 	})
-	if err != nil {
-		return err
+	if err == nil {
+		l.Note("deleted slot %d", slot)
 	}
-	l.Note("deleted slot %d", slot)
-	return l.uploads.forget(slot)
+	return err
 }
 
 // PanelState returns the current slot (03 36) and the key stored in each slot (03 35), as the app asks for them.

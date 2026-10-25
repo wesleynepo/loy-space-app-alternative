@@ -20,8 +20,9 @@ Close LOY SPACE (and disconnect the phone) first: the panel accepts one BLE conn
 - `Makefile`: `run`, `build`, `test`, `cover`, `vet`, `lint`, `fmt`, `check`, `clean`.
 - `.golangci.yml`, `.github/`: lint config, CI (lint, test with race detector on Linux and macOS, govulncheck). On `main`, CI also writes the coverage percentage to `coverage.json` on the `badges` branch for the README badge.
 - `cmd/server/main.go`: wiring only (port, folders, graceful shutdown).
+- `internal/store/`: the on-disk record of our uploads (`index.json` and one PNG preview per slot). Knows nothing about the panel.
 - `internal/server/`: HTTP layer. API handlers and the slot list. Knows nothing about BLE frames.
-- `panel/`: panel control, no HTTP. `link.go` is the BLE link (uploads, deletes, state, validated commands), `uploads.go` the on-disk record of our uploads, `protocol.go` frame build/parse and image packing.
+- `panel/`: panel control, no HTTP. `link.go` is the BLE link (uploads, deletes, state, validated commands), `protocol.go` frame build/parse and image packing.
 - `panel/protocol_test.go`, `panel/testdata_vectors.json`: protocol checks.
 - `web/`: `index.html` and the embedded copy.
 - `web/index.html`: slot grid with pictures and usage count, upload, delete, power / rotation / brightness, traffic log.

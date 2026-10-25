@@ -14,15 +14,17 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wesleynepo/led-panel/internal/store"
 	"github.com/wesleynepo/led-panel/panel"
 	"github.com/wesleynepo/led-panel/web"
 )
 
 type Server struct {
-	link *panel.Link
+	link  *panel.Link
+	store *store.Store
 }
 
-func New(link *panel.Link) *Server { return &Server{link: link} }
+func New(link *panel.Link, store *store.Store) *Server { return &Server{link: link, store: store} }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -82,7 +84,11 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, st)
 	case path == "/api/slots":
-		slots := s.allSlots()
+		slots, err := s.allSlots()
+		if err != nil {
+			fail(w, 500, err)
+			return
+		}
 		resp := map[string]any{"slots": slots, "current": nil, "error": nil, "used": nil, "total": panel.TotalSlots}
 		if s.link.Connected() {
 			if cur, keys, err := s.link.PanelState(); err != nil {
@@ -99,12 +105,12 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 			fail(w, 404, err)
 			return
 		}
-		body, ctype, err := s.slotImage(n)
+		body, err := s.store.Preview(store.Slot(n))
 		if err != nil {
 			fail(w, 404, err)
 			return
 		}
-		w.Header().Set("Content-Type", ctype)
+		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Cache-Control", "max-age=3600")
 		_, _ = w.Write(body)
 	case path == "/":
@@ -115,21 +121,37 @@ func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) reply(w http.ResponseWriter, err error) {
+	if err != nil {
+		s.link.Note("error: %v", err)
+		resp := s.link.Status()
+		resp["error"] = err.Error()
+		writeJSON(w, 400, resp)
+		return
+	}
+	writeJSON(w, 200, s.link.Status())
+}
+
+// recorded answers an upload and, when the panel took it, remembers it locally.
+func (s *Server) recorded(w http.ResponseWriter, up panel.Uploaded, err error) {
+	if err == nil {
+		err = s.store.Record(store.Slot(up.Slot), up.RGB, store.Entry{Key: up.Key, TS: up.TS})
+	}
+	if err != nil {
+		s.reply(w, err)
+		return
+	}
+	resp := s.link.Status()
+	resp["slot"] = up.Slot
+	writeJSON(w, 200, resp)
+}
+
 func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 	if !localOnly(r) || r.Header.Get("Content-Type") != "application/json" {
 		fail(w, 403, errors.New("forbidden"))
 		return
 	}
-	reply := func(err error) {
-		if err != nil {
-			s.link.Note("error: %v", err)
-			resp := s.link.Status()
-			resp["error"] = err.Error()
-			writeJSON(w, 400, resp)
-			return
-		}
-		writeJSON(w, 200, s.link.Status())
-	}
+	reply := func(err error) { s.reply(w, err) }
 	var args struct {
 		Index   *int        `json:"index"`
 		Slot    *int        `json:"slot"`
@@ -170,27 +192,18 @@ func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
 			reply(err)
 			return
 		}
-		slot, err := s.link.Upload(args.Slot, rgb)
-		if err != nil {
-			reply(err)
-			return
-		}
-		resp := s.link.Status()
-		resp["slot"] = slot
-		writeJSON(w, 200, resp)
+		up, err := s.link.Upload(args.Slot, rgb)
+		s.recorded(w, up, err)
 	case "/api/upload-text":
-		slot, err := s.link.UploadText(panel.TextRequest{Slot: args.Slot, Text: args.Text, FG: args.FG, BG: args.BG})
-		if err != nil {
-			reply(err)
-			return
-		}
-		resp := s.link.Status()
-		resp["slot"] = slot
-		writeJSON(w, 200, resp)
+		up, err := s.link.UploadText(panel.TextRequest{Slot: args.Slot, Text: args.Text, FG: args.FG, BG: args.BG})
+		s.recorded(w, up, err)
 	case "/api/delete":
 		slot, err := need(args.Slot, "slot")
 		if err == nil {
 			err = s.link.Delete(slot)
+		}
+		if err == nil {
+			err = s.store.Forget(store.Slot(slot))
 		}
 		reply(err)
 	case "/api/power":
