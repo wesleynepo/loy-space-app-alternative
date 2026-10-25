@@ -1,19 +1,25 @@
 # LED panel control (YS524A250818, LOY SPACE protocol)
 
-Local web UI + Python BLE server for the 64x64 panel, as an alternative to the LOY SPACE app. Reverse-engineered from a PacketLogger capture and the app's own JS.
+Local web UI + Go BLE server for the 64x64 panel, as an alternative to the LOY SPACE app. Reverse-engineered from a PacketLogger capture and the app's own JS.
 
 ## Run
 ```
-python3 -m venv .venv && .venv/bin/pip install bleak
-.venv/bin/python server.py          # http://127.0.0.1:8765 (localhost only)
+make run                                   # or: make build && ./led-panel; PORT=9000 make run
+# http://127.0.0.1:8765 (localhost only); optional port argument
+go test ./...                              # checks frame building and the upload sequence against known-good vectors
 ```
+BLE goes through tinygo.org/x/bluetooth. `web/index.html` is served from disk (an embedded copy is the fallback). Run it from the project folder (or set `LED_PANEL_DIR`) so `.uploads/` and `.cache/` are shared.
+
 Close LOY SPACE (and disconnect the phone) first: the panel accepts one BLE connection at a time. Click Connect in the page.
 
 ## Files
-- `server.py`: HTTP API + persistent BLE link; serves `web/index.html`.
-- `protocol.py`: frame build/parse, commands, image packing and upload frames.
+- `Makefile`: `run`, `build`, `test`, `vet`, `clean`.
+- `cmd/server/main.go`: wiring only (port, folders, graceful shutdown).
+- `internal/server/`: HTTP layer. API handlers, the LOY SPACE slot list and picture cache. Knows nothing about BLE frames.
+- `panel/`: panel control, no HTTP. `link.go` is the BLE link (uploads, deletes, state, validated commands), `uploads.go` the on-disk record of our uploads, `protocol.go` frame build/parse and image packing.
+- `panel/protocol_test.go`, `panel/testdata_vectors.json`: protocol checks.
+- `web/`: `index.html` and the embedded copy.
 - `web/index.html`: slot grid with pictures and usage count, upload, delete, power / rotation / brightness, traffic log.
-- `scan.py`, `gatt.py`, `probe.py` (read-only queries), `panel.py` (one-off command), `parse_pklg.py`, `rebuild.py`: investigation tools.
 - `NOTES-app-features.md`, `ROADMAP.md`: protocol notes, risk list, status.
 
 ## Notes
