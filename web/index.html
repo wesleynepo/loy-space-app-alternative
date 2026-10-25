@@ -313,7 +313,7 @@ async function loadSlots() {
     show.setAttribute('aria-label', 'Show slot ' + s.slot);
     show.onclick = () => api('/api/image', {index: s.slot});
     row.append(lead, meta, show);
-    if (s.type !== 'app' && s.slot >= FIRST_FREE_SLOT && s.slot <= LAST_SLOT) {
+    if (s.slot >= FIRST_FREE_SLOT && s.slot <= LAST_SLOT) {
       const del = document.createElement('button');
       del.className = 'icon-btn';
       del.dataset.needsConn = '1';

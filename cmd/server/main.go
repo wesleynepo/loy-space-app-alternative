@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/wesleynepo/led-panel/internal/server"
@@ -32,10 +30,7 @@ func run() error {
 	}
 
 	link := panel.New(".uploads")
-	app := server.New(link, server.Config{
-		CacheDir: ".cache",
-		AppDoc:   expandHome(getenv("LOY_DOC", "~/Library/Containers/com.yskd.loywf/Data/Library/Pandora/apps/__UNI__F2139F6/doc")),
-	})
+	app := server.New(link)
 	srv := &http.Server{Addr: "127.0.0.1:" + port, Handler: app.Handler()}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -57,19 +52,4 @@ func run() error {
 		return err
 	}
 	return nil
-}
-
-func getenv(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
-func expandHome(p string) string {
-	if rest, ok := strings.CutPrefix(p, "~/"); ok {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, rest)
-	}
-	return p
 }
