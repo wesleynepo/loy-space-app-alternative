@@ -31,7 +31,9 @@ type Link struct {
 	adapter *bluetooth.Adapter
 	device  bluetooth.Device
 	write   bluetooth.DeviceCharacteristic
-	up      atomic.Bool // written under mu; readable without it so status polling never waits on an upload
+	up      atomic.Bool  // written under mu; readable without it so status polling never waits on an upload
+	trying  atomic.Int32 // Connect calls in flight, including ones waiting on mu
+	connErr atomic.Value // string: why the last Connect failed, empty after a success
 	infoVal atomic.Value
 	asm     Reassembler
 	replies chan Frame
@@ -86,10 +88,27 @@ func (l *Link) Status() map[string]any {
 	l.logMu.Lock()
 	defer l.logMu.Unlock()
 	info, _ := l.infoVal.Load().(string)
-	return map[string]any{"connected": l.up.Load(), "info": info, "log": append([]string{}, l.log...)}
+	connErr, _ := l.connErr.Load().(string)
+	return map[string]any{
+		"connected": l.up.Load(), "connecting": l.trying.Load() > 0, "connectError": connErr,
+		"info": info, "log": append([]string{}, l.log...),
+	}
 }
 
+// Connect scans for the panel and opens the link, recording the outcome for Status.
 func (l *Link) Connect() error {
+	l.trying.Add(1)
+	defer l.trying.Add(-1)
+	err := l.connect()
+	if err != nil {
+		l.connErr.Store(err.Error())
+	} else {
+		l.connErr.Store("")
+	}
+	return err
+}
+
+func (l *Link) connect() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.up.Load() {
@@ -187,6 +206,7 @@ func (l *Link) Disconnect() error {
 	if l.up.Load() {
 		l.dropLocked()
 	}
+	l.connErr.Store("")
 	l.Note("disconnected")
 	return nil
 }

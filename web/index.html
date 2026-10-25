@@ -42,7 +42,7 @@
   h2 small { font-weight:400; font-size:12px; color:var(--on-surface-variant); letter-spacing:.4px; }
   .hint { display:block; margin-top:12px; font-size:12px; line-height:16px; letter-spacing:.4px; color:var(--on-surface-variant); }
   .row { display:flex; gap:8px 12px; flex-wrap:wrap; align-items:center; }
-  .row + .row { margin-top:16px; }
+  .row + .row, .slots + .row { margin-top:16px; }
   .grow { flex:1; }
 
   /* buttons */
@@ -69,6 +69,11 @@
   .status::before { content:""; width:8px; height:8px; border-radius:50%; background:currentColor; }
   .status.on { background:var(--ok-container); color:var(--on-ok-container); }
   .status.off { background:var(--error-container); color:var(--on-error-container); }
+  .status.wait { background:var(--secondary-container); color:var(--on-secondary-container); }
+  .status.wait::before { animation:pulse 1s ease-in-out infinite alternate; }
+  @keyframes pulse { to { opacity:.25; } }
+  #connErr { margin:12px 0 0; color:var(--error); }
+  #connErr:empty { display:none; }
   #info { color:var(--on-surface-variant); }
 
   /* slots */
@@ -159,6 +164,7 @@
       <button id="disconnect" class="outlined">Disconnect</button>
       <span id="info"></span>
     </div>
+    <p id="connErr"></p>
   </section>
   <section>
     <h2>Slots <small id="usage"></small></h2>
@@ -295,12 +301,14 @@ function render(s) {
   if (s.connected === undefined) return;
   if (wasConnected !== null && s.connected !== wasConnected) { wasConnected = s.connected; loadSlots(); loadState(); }
   wasConnected = s.connected; updateUpload();
-  $('state').textContent = s.connected ? 'connected' : 'disconnected';
-  $('state').className = 'status ' + (s.connected ? 'on' : 'off');
+  $('state').textContent = s.connected ? 'connected' : s.connecting ? 'connecting…' : 'disconnected';
+  $('state').className = 'status ' + (s.connected ? 'on' : s.connecting ? 'wait' : 'off');
+  $('connErr').textContent = s.connected || s.connecting ? '' : s.connectError || '';
   $('info').textContent = s.info || '';
   for (const el of document.querySelectorAll('[data-needs-conn]')) el.disabled = !s.connected;
   $('bright').disabled = !s.connected;
-  $('connect').disabled = s.connected;
+  $('connect').disabled = s.connected || s.connecting;
+  $('connect').textContent = s.connecting ? 'Connecting…' : s.connectError && !s.connected ? 'Retry' : 'Connect';
   $('disconnect').disabled = !s.connected;
   const log = $('log');
   const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
@@ -309,8 +317,7 @@ function render(s) {
 }
 
 $('refresh').onclick = loadSlots;
-$('connect').onclick = async () => { $('connect').disabled = true; $('connect').textContent = 'Connecting…';
-  await api('/api/connect', {}); $('connect').textContent = 'Connect'; };
+$('connect').onclick = async () => { $('connect').disabled = true; $('connect').textContent = 'Connecting…'; await api('/api/connect', {}); };
 $('disconnect').onclick = () => api('/api/disconnect', {});
 let hasImage = false, uploading = false;
 const updateUpload = () => { $('upload').disabled = !(wasConnected && hasImage) || uploading; };
