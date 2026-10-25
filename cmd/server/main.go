@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/wesleynepo/led-panel/internal/server"
 	"github.com/wesleynepo/led-panel/internal/store"
@@ -27,21 +28,33 @@ func run() error {
 		port = os.Args[1]
 	}
 	if d := os.Getenv("LED_PANEL_DIR"); d != "" {
-		_ = os.Chdir(d)
+		if err := os.Chdir(d); err != nil {
+			return err
+		}
 	}
 
 	link := panel.New()
 	app := server.New(link, store.New(".uploads"))
-	srv := &http.Server{Addr: "127.0.0.1:" + port, Handler: app.Handler()}
+	srv := &http.Server{
+		Addr:              "127.0.0.1:" + port,
+		Handler:           app.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       time.Minute,
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		<-ctx.Done()
 		if link.Connected() {
 			_ = link.Disconnect()
 		}
-		srv.Close()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdown)
 	}()
 	go func() {
 		if err := link.Connect(); err != nil {
@@ -52,5 +65,6 @@ func run() error {
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	<-done
 	return nil
 }

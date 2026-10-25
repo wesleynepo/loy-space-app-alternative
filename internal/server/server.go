@@ -1,18 +1,18 @@
 package server
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/wesleynepo/led-panel/internal/store"
 	"github.com/wesleynepo/led-panel/panel"
@@ -28,9 +28,57 @@ func New(link *panel.Link, store *store.Store) *Server { return &Server{link: li
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", s.handleGet)
-	mux.HandleFunc("POST /", s.handlePost)
-	return mux
+	mux.HandleFunc("GET /{$}", s.index)
+	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, s.link.Status()) })
+	mux.HandleFunc("GET /api/state", s.state)
+	mux.HandleFunc("GET /api/slots", s.slots)
+	mux.HandleFunc("GET /img/{slot}", s.image)
+
+	mux.HandleFunc("POST /api/connect", s.post(func(args) error { return s.link.Connect() }))
+	mux.HandleFunc("POST /api/disconnect", s.post(func(args) error { return s.link.Disconnect() }))
+	mux.HandleFunc("POST /api/image", s.post(func(a args) error {
+		i, err := need(a.Index, "index")
+		if err != nil {
+			return err
+		}
+		return s.link.ShowImage(i)
+	}))
+	mux.HandleFunc("POST /api/upload", s.upload(func(a args) (panel.Uploaded, error) {
+		rgb, err := base64.StdEncoding.DecodeString(a.RGB)
+		if err != nil {
+			return panel.Uploaded{}, err
+		}
+		return s.link.Upload(a.Slot, rgb)
+	}))
+	mux.HandleFunc("POST /api/upload-text", s.upload(func(a args) (panel.Uploaded, error) {
+		return s.link.UploadText(panel.TextRequest{Slot: a.Slot, Text: a.Text, FG: a.FG, BG: a.BG})
+	}))
+	mux.HandleFunc("POST /api/delete", s.post(func(a args) error {
+		slot, err := need(a.Slot, "slot")
+		if err != nil {
+			return err
+		}
+		if err := s.link.Delete(slot); err != nil {
+			return err
+		}
+		return s.store.Forget(store.Slot(slot))
+	}))
+	mux.HandleFunc("POST /api/power", s.post(func(a args) error { return s.link.SetPower(a.On) }))
+	mux.HandleFunc("POST /api/rotation", s.post(func(a args) error {
+		d, err := need(a.Degrees, "degrees")
+		if err != nil {
+			return err
+		}
+		return s.link.SetRotation(d)
+	}))
+	mux.HandleFunc("POST /api/brightness", s.post(func(a args) error {
+		lv, err := need(a.Level, "level")
+		if err != nil {
+			return err
+		}
+		return s.link.SetBrightness(lv)
+	}))
+	return localOnly(mux)
 }
 
 func (s *Server) indexHTML() []byte {
@@ -53,71 +101,144 @@ func fail(w http.ResponseWriter, code int, err error) {
 
 func isLocal(host string) bool { return host == "127.0.0.1" || host == "localhost" }
 
-func localOnly(r *http.Request) bool {
-	host := r.Host
-	if i := strings.LastIndex(host, ":"); i >= 0 {
-		host = host[:i]
-	}
-	if !isLocal(host) {
-		return false
-	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		return err == nil && isLocal(u.Hostname())
-	}
-	return true
+// localOnly rejects requests whose Host or Origin is not this machine, which stops DNS rebinding and cross-site calls.
+func localOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		ok := isLocal(host)
+		if origin := r.Header.Get("Origin"); ok && origin != "" {
+			u, err := url.Parse(origin)
+			ok = err == nil && isLocal(u.Hostname())
+		}
+		if !ok {
+			fail(w, 403, errors.New("forbidden"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
-func (s *Server) handleGet(w http.ResponseWriter, r *http.Request) {
-	if !localOnly(r) {
-		fail(w, 403, errors.New("forbidden"))
+func (s *Server) index(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(s.indexHTML())
+}
+
+func (s *Server) state(w http.ResponseWriter, _ *http.Request) {
+	st, err := s.link.ReadState()
+	if err != nil {
+		fail(w, 400, err)
 		return
 	}
-	switch path := r.URL.Path; {
-	case path == "/api/status":
-		writeJSON(w, 200, s.link.Status())
-	case path == "/api/state":
-		st, err := s.link.ReadState()
-		if err != nil {
+	writeJSON(w, 200, st)
+}
+
+func (s *Server) slots(w http.ResponseWriter, _ *http.Request) {
+	slots, err := s.allSlots()
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	resp := map[string]any{"slots": slots, "current": nil, "error": nil, "used": nil, "total": panel.TotalSlots}
+	if s.link.Connected() {
+		if cur, keys, err := s.link.PanelState(); err != nil {
+			resp["error"] = err.Error()
+		} else {
+			resp["current"], resp["used"] = cur, len(keys)
+			resp["slots"] = withPanelKeys(slots, keys)
+		}
+	}
+	writeJSON(w, 200, resp)
+}
+
+func (s *Server) image(w http.ResponseWriter, r *http.Request) {
+	raw := r.PathValue("slot")
+	n, err := strconv.Atoi(raw)
+	if err != nil || strconv.Itoa(n) != raw {
+		http.NotFound(w, r)
+		return
+	}
+	body, err := s.store.Preview(store.Slot(n))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "max-age=3600")
+	_, _ = w.Write(body)
+}
+
+// args is the union of every POST body; each route reads the fields it needs.
+type args struct {
+	Index   *int        `json:"index"`
+	Slot    *int        `json:"slot"`
+	RGB     string      `json:"rgb"`
+	Text    string      `json:"text"`
+	FG      panel.Color `json:"fg"`
+	BG      panel.Color `json:"bg"`
+	On      bool        `json:"on"`
+	Degrees *int        `json:"degrees"`
+	Level   *int        `json:"level"`
+}
+
+func need(p *int, name string) (int, error) {
+	if p == nil {
+		return 0, fmt.Errorf("missing %q", name)
+	}
+	return *p, nil
+}
+
+const maxBody = 1 << 20
+
+// decode reads a POST body. Requiring a JSON content type forces a CORS preflight on cross-site pages, so it doubles as
+// the CSRF guard. An empty body is fine.
+func decode(w http.ResponseWriter, r *http.Request) (args, bool) {
+	var a args
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		fail(w, 403, errors.New("forbidden"))
+		return a, false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+	if err := json.NewDecoder(r.Body).Decode(&a); err != nil && !errors.Is(err, io.EOF) {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			fail(w, 413, errors.New("request body too large"))
+		} else {
 			fail(w, 400, err)
+		}
+		return a, false
+	}
+	return a, true
+}
+
+func (s *Server) post(fn func(args) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if a, ok := decode(w, r); ok {
+			s.reply(w, fn(a))
+		}
+	}
+}
+
+// upload answers an upload and, when the panel took it, remembers it locally.
+func (s *Server) upload(fn func(args) (panel.Uploaded, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a, ok := decode(w, r)
+		if !ok {
 			return
 		}
-		writeJSON(w, 200, st)
-	case path == "/api/slots":
-		slots, err := s.allSlots()
+		up, err := fn(a)
+		if err == nil {
+			err = s.store.Record(store.Slot(up.Slot), up.RGB, store.Entry{Key: up.Key, TS: up.TS})
+		}
 		if err != nil {
-			fail(w, 500, err)
+			s.reply(w, err)
 			return
 		}
-		resp := map[string]any{"slots": slots, "current": nil, "error": nil, "used": nil, "total": panel.TotalSlots}
-		if s.link.Connected() {
-			if cur, keys, err := s.link.PanelState(); err != nil {
-				resp["error"] = err.Error()
-			} else {
-				resp["current"], resp["used"] = cur, len(keys)
-				resp["slots"] = withPanelKeys(slots, keys)
-			}
-		}
+		resp := s.link.Status()
+		resp["slot"] = up.Slot
 		writeJSON(w, 200, resp)
-	case strings.HasPrefix(path, "/img/"):
-		n, err := strconv.Atoi(path[5:])
-		if err != nil {
-			fail(w, 404, err)
-			return
-		}
-		body, err := s.store.Preview(store.Slot(n))
-		if err != nil {
-			fail(w, 404, err)
-			return
-		}
-		w.Header().Set("Content-Type", "image/png")
-		w.Header().Set("Cache-Control", "max-age=3600")
-		_, _ = w.Write(body)
-	case path == "/":
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(s.indexHTML())
-	default:
-		fail(w, 404, errors.New("not found"))
 	}
 }
 
@@ -130,97 +251,4 @@ func (s *Server) reply(w http.ResponseWriter, err error) {
 		return
 	}
 	writeJSON(w, 200, s.link.Status())
-}
-
-// recorded answers an upload and, when the panel took it, remembers it locally.
-func (s *Server) recorded(w http.ResponseWriter, up panel.Uploaded, err error) {
-	if err == nil {
-		err = s.store.Record(store.Slot(up.Slot), up.RGB, store.Entry{Key: up.Key, TS: up.TS})
-	}
-	if err != nil {
-		s.reply(w, err)
-		return
-	}
-	resp := s.link.Status()
-	resp["slot"] = up.Slot
-	writeJSON(w, 200, resp)
-}
-
-func (s *Server) handlePost(w http.ResponseWriter, r *http.Request) {
-	if !localOnly(r) || r.Header.Get("Content-Type") != "application/json" {
-		fail(w, 403, errors.New("forbidden"))
-		return
-	}
-	reply := func(err error) { s.reply(w, err) }
-	var args struct {
-		Index   *int        `json:"index"`
-		Slot    *int        `json:"slot"`
-		RGB     string      `json:"rgb"`
-		Text    string      `json:"text"`
-		FG      panel.Color `json:"fg"`
-		BG      panel.Color `json:"bg"`
-		On      bool        `json:"on"`
-		Degrees *int        `json:"degrees"`
-		Level   *int        `json:"level"`
-	}
-	if body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20)); len(bytes.TrimSpace(body)) > 0 {
-		if err := json.Unmarshal(body, &args); err != nil {
-			reply(err)
-			return
-		}
-	}
-	need := func(p *int, name string) (int, error) {
-		if p == nil {
-			return 0, fmt.Errorf("missing %q", name)
-		}
-		return *p, nil
-	}
-	switch r.URL.Path {
-	case "/api/connect":
-		reply(s.link.Connect())
-	case "/api/disconnect":
-		reply(s.link.Disconnect())
-	case "/api/image":
-		i, err := need(args.Index, "index")
-		if err == nil {
-			err = s.link.ShowImage(i)
-		}
-		reply(err)
-	case "/api/upload":
-		rgb, err := base64.StdEncoding.DecodeString(args.RGB)
-		if err != nil {
-			reply(err)
-			return
-		}
-		up, err := s.link.Upload(args.Slot, rgb)
-		s.recorded(w, up, err)
-	case "/api/upload-text":
-		up, err := s.link.UploadText(panel.TextRequest{Slot: args.Slot, Text: args.Text, FG: args.FG, BG: args.BG})
-		s.recorded(w, up, err)
-	case "/api/delete":
-		slot, err := need(args.Slot, "slot")
-		if err == nil {
-			err = s.link.Delete(slot)
-		}
-		if err == nil {
-			err = s.store.Forget(store.Slot(slot))
-		}
-		reply(err)
-	case "/api/power":
-		reply(s.link.SetPower(args.On))
-	case "/api/rotation":
-		d, err := need(args.Degrees, "degrees")
-		if err == nil {
-			err = s.link.SetRotation(d)
-		}
-		reply(err)
-	case "/api/brightness":
-		lv, err := need(args.Level, "level")
-		if err == nil {
-			err = s.link.SetBrightness(lv)
-		}
-		reply(err)
-	default:
-		fail(w, 404, errors.New("not found"))
-	}
 }
